@@ -1,0 +1,25 @@
+startup:
+  timeout: 15s
+
+http:
+  addr: ":8080"
+  read_timeout: 10s
+  write_timeout: 15s
+  idle_timeout: 60s
+
+mysql:
+  dsn: "tasks:tasks@tcp(mysql:3306)/tasks?parseTime=true"
+  max_open_conns: 25
+  max_idle_conns: 25
+  conn_max_lifetime: 5m
+
+redis:
+  addr: "redis:6379"
+  db: 0
+
+shutdown:
+  total: 20s
+  phase: 10s
+
+health:
+  check_timeout: 2s

@@ -1,0 +1,62 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tasks}
+      MYSQL_USER: ${MYSQL_USER:-tasks}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-tasks}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrator:
+    build:
+      context: .
+      target: migrator
+    environment:
+      GOOSE_DRIVER: ${GOOSE_DRIVER:-mysql}
+      GOOSE_DBSTRING: ${GOOSE_DBSTRING:-tasks:tasks@tcp(mysql:3306)/tasks?parseTime=true}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  app:
+    build: .
+    environment:
+      ENV: ${ENV:-develop}
+      APP_VERSION: ${APP_VERSION:-dev}
+      CONFIG_PATH: ${CONFIG_PATH:-/config.yaml}
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  mysql_data:

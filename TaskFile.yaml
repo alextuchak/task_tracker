@@ -1,0 +1,72 @@
+version: '3'
+
+vars:
+  GOOSE_DSN: '"tasks:tasks@tcp(localhost:3306)/tasks?parseTime=true"'
+
+tasks:
+  build:
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/task-tracker cmd/api/main.go
+  run:
+    deps: [build]
+    cmds:
+      - ./bin/task-tracker
+  install-lint:
+    cmds:
+      - which golangci-lint || curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(go env GOPATH)/bin
+    desc: "Install golangci-lint if not present"
+  lint:
+    deps: [install-lint]
+    cmds:
+      - golangci-lint run ./...
+    desc: "Run linters"
+  fmt:
+    cmds:
+      - golangci-lint fmt
+    desc: "Format code (gofumpt + goimports)"
+  test:
+    cmds:
+      - go test -race ./...
+    desc: "Run tests with race detector"
+  cover:
+    cmds:
+      - go test -race -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+    desc: "Run tests with coverage report"
+
+  up:
+    cmds:
+      - docker compose up -d --build
+    desc: "Build and start the full stack (mysql, redis, migrator, app)"
+  down:
+    cmds:
+      - docker compose down
+    desc: "Stop the stack"
+
+  migrate-new:
+    cmds:
+      - goose -dir migrations create {{.name}} sql
+    desc: "Create a new migration: task migrate-new name=add_something"
+  migrate-up:
+    cmds:
+      - goose -dir migrations mysql {{.GOOSE_DSN}} up
+    desc: "Apply migrations to local mysql"
+  migrate-status:
+    cmds:
+      - goose -dir migrations mysql {{.GOOSE_DSN}} status
+    desc: "Show migration status"
+
+  pre-commit-install:
+    cmds:
+      - which pre-commit || pipx install pre-commit || brew install pre-commit
+      - pre-commit install
+    desc: "Install pre-commit and set up the git hook"
+  pre-commit:
+    cmds:
+      - pre-commit run --all-files
+    desc: "Run all pre-commit hooks on the whole repo"
+
+  check:
+    deps: [fmt, lint]
+    desc: "Format and lint"
