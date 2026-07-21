@@ -1,22 +1,36 @@
 package http
 
 import (
+	"log/slog"
 	"net/http"
 	"task_tracker/internal/infrastructure/health"
+	"task_tracker/internal/service"
+	"task_tracker/internal/transport/http/auth"
+	"task_tracker/internal/transport/http/middleware"
+
+	_ "task_tracker/docs" // generated swagger spec
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
-func NewRouter(h *health.Health) http.Handler {
+func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth, parser middleware.TokenParser) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.Recoverer)
+	r.Use(chimw.Recoverer)
+	r.Use(middleware.Logging(log))
 
 	r.Get("/livez", livezHandler)
 	r.Get("/readyz", readyzHandler(h))
+	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// handlers are mounted here as features land (auth, teams, tasks)
+		r.Mount("/", auth.Routes(authSvc))
+
+		// authenticated routes mount here (teams, tasks)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.Auth(parser))
+		})
 	})
 	return r
 }

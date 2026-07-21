@@ -7,16 +7,17 @@ import (
 	"log/slog"
 	"net/http"
 	"task_tracker/internal/infrastructure/cache"
-	"task_tracker/internal/infrastructure/closer"
 	"task_tracker/internal/infrastructure/health"
+	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
-	"task_tracker/internal/infrastructure/starter"
+	"task_tracker/internal/infrastructure/token"
+	"task_tracker/internal/service"
 
 	transport "task_tracker/internal/transport/http"
 )
 
-func NewApp(ctx context.Context, c *closer.Closer, cfg *Config, log *slog.Logger) (*App, error) {
-	st := starter.New(log, cfg.Startup)
+func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Logger) (*App, error) {
+	st := lifecycle.NewStarter(log, cfg.Startup)
 
 	db, err := persistence.NewMySQL(cfg.MySQL)
 	if err != nil {
@@ -39,9 +40,12 @@ func NewApp(ctx context.Context, c *closer.Closer, cfg *Config, log *slog.Logger
 		func(ctx context.Context) error { return rdb.Ping(ctx).Err() },
 	)
 
+	jwt := token.NewJWT(cfg.Auth)
+	authService := service.NewAuth(persistence.NewUserRepo(db), jwt)
+
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
-		Handler:      transport.NewRouter(h),
+		Handler:      transport.NewRouter(log, h, authService, jwt),
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 		IdleTimeout:  cfg.HTTP.IdleTimeout,
@@ -54,7 +58,7 @@ func NewApp(ctx context.Context, c *closer.Closer, cfg *Config, log *slog.Logger
 type App struct {
 	srv    *http.Server
 	health *health.Health
-	closer *closer.Closer
+	closer *lifecycle.Closer
 	log    *slog.Logger
 }
 

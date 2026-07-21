@@ -2,6 +2,9 @@ version: '3'
 
 vars:
   GOOSE_DSN: '"tasks:tasks@tcp(localhost:3306)/tasks?parseTime=true"'
+  # endpoint текущего docker context — работает с orbstack/colima/desktop без хардкода
+  DOCKER_SOCK:
+    sh: sh -c 'echo "${DOCKER_HOST:-$(docker context inspect -f "{{"{{"}}.Endpoints.docker.Host{{"}}"}}" 2>/dev/null)}"'
 
 tasks:
   build:
@@ -26,14 +29,23 @@ tasks:
       - golangci-lint fmt
     desc: "Format code (gofumpt + goimports)"
   test:
+    env:
+      DOCKER_HOST: '{{.DOCKER_SOCK}}'
     cmds:
-      - go test -race ./...
-    desc: "Run tests with race detector"
+      - go test -race -count=1 ./...
+    desc: "Run all tests including integration (needs docker)"
+  test-unit:
+    cmds:
+      - go test -race -short ./...
+    desc: "Run unit tests only, integration skipped"
   cover:
+    env:
+      DOCKER_HOST: '{{.DOCKER_SOCK}}'
     cmds:
-      - go test -race -coverprofile=coverage.out ./...
+      - go test -race -count=1 -coverprofile=coverage.out -coverpkg=./internal/... ./...
+      - go tool cover -func=coverage.out | tail -1
       - go tool cover -html=coverage.out -o coverage.html
-    desc: "Run tests with coverage report"
+    desc: "Coverage across all tests incl. integration (needs docker)"
 
   up:
     cmds:
@@ -56,6 +68,16 @@ tasks:
     cmds:
       - goose -dir migrations mysql {{.GOOSE_DSN}} status
     desc: "Show migration status"
+
+  install-swag:
+    cmds:
+      - which swag || go install github.com/swaggo/swag/cmd/swag@v1.16.6
+    desc: "Install swag CLI if not present"
+  swagger:
+    deps: [install-swag]
+    cmds:
+      - swag init -g cmd/api/main.go -o docs --outputTypes go,json --parseDependency --parseInternal
+    desc: "Regenerate swagger spec from handler annotations"
 
   pre-commit-install:
     cmds:

@@ -31,8 +31,8 @@ repos:
         pass_filenames: false
 
       - id: go-test
-        name: go test
-        entry: go test ./...
+        name: go test (unit)
+        entry: go test -short ./...
         language: system
         types: [go]
         pass_filenames: false

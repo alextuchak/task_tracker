@@ -1,7 +1,11 @@
-package closer
+// Package lifecycle owns app startup and shutdown: the Starter pings
+// registered connections before serving, the Closer drains and releases
+// them gracefully on the way out.
+package lifecycle
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -12,7 +16,22 @@ const (
 	release string = "release"
 )
 
-func New(log *slog.Logger, cfg Config) *Closer {
+type CloserConfig struct {
+	Total time.Duration `yaml:"total" env-default:"20s"`
+	Phase time.Duration `yaml:"phase" env-default:"10s"`
+}
+
+func (c *CloserConfig) Validate() error {
+	if c.Total <= 0 || c.Phase <= 0 {
+		return fmt.Errorf("timeouts must be positive, got total: %s, phase: %s", c.Total, c.Phase)
+	}
+	if c.Phase > c.Total {
+		return fmt.Errorf("phase timeout %s must not exceed total %s", c.Phase, c.Total)
+	}
+	return nil
+}
+
+func NewCloser(log *slog.Logger, cfg CloserConfig) *Closer {
 	return &Closer{log: log, shutdownTimeout: cfg.Total, phaseTimeout: cfg.Phase}
 }
 

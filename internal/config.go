@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"task_tracker/internal/infrastructure/cache"
-	"task_tracker/internal/infrastructure/closer"
+	"task_tracker/internal/infrastructure/config"
 	"task_tracker/internal/infrastructure/health"
+	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
-	"task_tracker/internal/infrastructure/starter"
-	"task_tracker/internal/pkg/config"
+	"task_tracker/internal/infrastructure/token"
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -21,8 +21,6 @@ func NewConfig() (*Config, error) {
 	if path == "" {
 		path = "config.yaml"
 	}
-	// the file is the single source of truth; the only env inputs are
-	// CONFIG_PATH and the fields that never live in yaml (ENV, APP_VERSION)
 	if err := cleanenv.ReadConfig(path, &cfg); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
 	}
@@ -30,19 +28,18 @@ func NewConfig() (*Config, error) {
 }
 
 type Config struct {
-	AppName    string             `env-default:"task-tracker"`
-	AppVersion string             `env:"APP_VERSION" env-default:"dev"`
-	Env        string             `env:"ENV" env-default:"local"`
-	Redis      cache.Config       `yaml:"redis"`
-	HTTP       HTTPConfig         `yaml:"http"`
-	MySQL      persistence.Config `yaml:"mysql"`
-	Shutdown   closer.Config      `yaml:"shutdown"`
-	Startup    starter.Config     `yaml:"startup"`
-	Health     health.Config      `yaml:"health"`
+	AppName    string                  `env-default:"task-tracker"`
+	AppVersion string                  `env:"APP_VERSION" env-default:"dev"`
+	Env        string                  `env:"ENV" env-default:"local"`
+	Redis      cache.Config            `yaml:"redis"`
+	Auth       token.Config            `yaml:"auth"`
+	HTTP       HTTPConfig              `yaml:"http"`
+	MySQL      persistence.Config      `yaml:"mysql"`
+	Shutdown   lifecycle.CloserConfig  `yaml:"shutdown"`
+	Startup    lifecycle.StarterConfig `yaml:"startup"`
+	Health     health.Config           `yaml:"health"`
 }
 
-// HTTPConfig lives in the main config: the http server is the application
-// itself, transport only owns routes and handlers.
 type HTTPConfig struct {
 	Addr         string        `yaml:"addr" env-default:":8080"`
 	ReadTimeout  time.Duration `yaml:"read_timeout" env-default:"10s"`
@@ -78,6 +75,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := config.ValidateField("health", &c.Health); err != nil {
+		return err
+	}
+	if err := config.ValidateField("auth", &c.Auth); err != nil {
 		return err
 	}
 	return nil

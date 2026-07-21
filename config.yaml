@@ -23,3 +23,7 @@ shutdown:
 
 health:
   check_timeout: 2s
+
+auth:
+  secret: "local-dev-secret-change-me-please-32b"
+  ttl: 24h
