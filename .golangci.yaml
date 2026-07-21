@@ -1,0 +1,57 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - sloglint
+    - depguard
+    - gocritic
+    - unconvert
+    - misspell
+    - unparam
+    - nolintlint
+
+  settings:
+    govet:
+      enable:
+        - fieldalignment
+
+    sloglint:
+      static-msg: true
+      key-naming-case: snake
+
+    depguard:
+      rules:
+        domain:
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: "task_tracker/internal/infrastructure"
+              desc: "domain must not depend on infrastructure"
+            - pkg: "task_tracker/internal/transport"
+              desc: "domain must not know HTTP"
+            - pkg: "github.com/jmoiron/sqlx"
+              desc: "convert sql types at the repository boundary"
+            - pkg: "github.com/redis/go-redis"
+              desc: "domain must not know Redis"
+            - pkg: "github.com/go-chi"
+              desc: "domain must not know HTTP router"
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        text: "fieldalignment"
+
+# goimports без local-prefixes: настройка конфликтует с gofumpt
+# (run проверяет форматтеры поодиночке, и любая ручная группировка
+# не-std импортов валит проверку gofumpt). Локальные импорты
+# сортируются в общей группе после внешних.
+formatters:
+  enable:
+    - gofumpt
+    - goimports
