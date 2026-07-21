@@ -24,6 +24,11 @@ jobs:
         run: golangci-lint fmt --diff
       - name: go mod tidy check
         run: go mod tidy -diff
+      - name: swagger spec is up to date
+        run: |
+          go install github.com/swaggo/swag/cmd/swag@v1.16.6
+          swag init -g cmd/api/main.go -o docs --outputTypes go,json --parseDependency --parseInternal
+          git diff --exit-code docs/
 
   govulncheck:
     runs-on: ubuntu-latest

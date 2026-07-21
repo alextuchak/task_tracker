@@ -1,15 +1,14 @@
 package persistence
 
 import (
+	"database/sql"
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
 )
 
-// NewMySQL only builds the pool; liveness is verified by the starter.
-func NewMySQL(cfg Config) (*sqlx.DB, error) {
-	db, err := sqlx.Open("mysql", cfg.DSN)
+func NewMySQL(cfg Config) (*sql.DB, error) {
+	db, err := sql.Open("mysql", cfg.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("open mysql: %w", err)
 	}

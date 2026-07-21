@@ -46,6 +46,9 @@ linters:
     rules:
       - path: _test\.go
         text: "fieldalignment"
+      - path: _test\.go
+        linters:
+          - unparam
 
 # goimports без local-prefixes: настройка конфликтует с gofumpt
 # (run проверяет форматтеры поодиночке, и любая ручная группировка

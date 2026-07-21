@@ -1,4 +1,4 @@
-package starter
+package lifecycle
 
 import (
 	"context"
@@ -14,7 +14,7 @@ func discard() *slog.Logger {
 }
 
 func TestStartPingsAllRegistered(t *testing.T) {
-	s := New(discard(), Config{Timeout: time.Second})
+	s := NewStarter(discard(), StarterConfig{Timeout: time.Second})
 	var called atomic.Int32
 	s.AddPing(
 		func(ctx context.Context) error { called.Add(1); return nil },
@@ -30,7 +30,7 @@ func TestStartPingsAllRegistered(t *testing.T) {
 }
 
 func TestStartReturnsFailedPings(t *testing.T) {
-	s := New(discard(), Config{Timeout: time.Second})
+	s := NewStarter(discard(), StarterConfig{Timeout: time.Second})
 	dbErr := errors.New("mysql down")
 	s.AddPing(
 		func(ctx context.Context) error { return nil },
@@ -43,7 +43,7 @@ func TestStartReturnsFailedPings(t *testing.T) {
 }
 
 func TestStartNoPings(t *testing.T) {
-	s := New(discard(), Config{Timeout: time.Second})
+	s := NewStarter(discard(), StarterConfig{Timeout: time.Second})
 
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatalf("expected nil for empty starter, got %v", err)
@@ -51,7 +51,7 @@ func TestStartNoPings(t *testing.T) {
 }
 
 func TestStartTimeout(t *testing.T) {
-	s := New(discard(), Config{Timeout: 50 * time.Millisecond})
+	s := NewStarter(discard(), StarterConfig{Timeout: 50 * time.Millisecond})
 	s.AddPing(func(ctx context.Context) error {
 		<-ctx.Done()
 		return ctx.Err()

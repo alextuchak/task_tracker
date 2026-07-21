@@ -1,19 +1,34 @@
-package starter
+package lifecycle
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 )
 
+// Ping verifies a single registered connection is alive.
 type Ping func(ctx context.Context) error
 
-func New(log *slog.Logger, cfg Config) *Starter {
+type StarterConfig struct {
+	Timeout time.Duration `yaml:"timeout" env-default:"15s"`
+}
+
+func (c *StarterConfig) Validate() error {
+	if c.Timeout <= 0 {
+		return fmt.Errorf("timeout must be positive, got: %s", c.Timeout)
+	}
+	return nil
+}
+
+func NewStarter(log *slog.Logger, cfg StarterConfig) *Starter {
 	return &Starter{log: log, timeout: cfg.Timeout}
 }
 
+// Starter mirrors the Closer: connections register on creation,
+// then Start pings them all at once before the app begins serving.
 type Starter struct {
 	log     *slog.Logger
 	pings   []Ping

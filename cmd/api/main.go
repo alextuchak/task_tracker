@@ -9,9 +9,19 @@ import (
 	"os/signal"
 	"syscall"
 	"task_tracker/internal"
-	"task_tracker/internal/infrastructure/closer"
+	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/logger"
 )
+
+// @title           Task Tracker API
+// @version         1.0
+// @description     Сервис управления задачами с командной работой и историей изменений.
+// @BasePath        /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in   header
+// @name Authorization
+// @description JWT в формате: Bearer {token}
 
 func main() {
 	cfg, err := internal.NewConfig()
@@ -26,7 +36,7 @@ func main() {
 	log := logger.NewLog(cfg.Env, cfg.AppName, cfg.AppVersion)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	c := closer.New(log, cfg.Shutdown)
+	c := lifecycle.NewCloser(log, cfg.Shutdown)
 
 	app, err := internal.NewApp(ctx, c, cfg, log)
 	if err != nil {
