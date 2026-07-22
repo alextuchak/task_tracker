@@ -1,4 +1,4 @@
-package token
+package identity
 
 import (
 	"errors"

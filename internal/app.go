@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
-	"task_tracker/internal/infrastructure/token"
 	"task_tracker/internal/service"
 
 	transport "task_tracker/internal/transport/http"
@@ -40,12 +40,12 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 		func(ctx context.Context) error { return rdb.Ping(ctx).Err() },
 	)
 
-	jwt := token.NewJWT(cfg.Auth)
-	authService := service.NewAuth(persistence.NewUserRepo(db), jwt)
+	idp := identity.NewProvider(cfg.Auth)
+	authService := service.NewAuth(persistence.NewUserRepo(db), idp)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
-		Handler:      transport.NewRouter(log, h, authService, jwt),
+		Handler:      transport.NewRouter(log, h, authService, idp),
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 		IdleTimeout:  cfg.HTTP.IdleTimeout,

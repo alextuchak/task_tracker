@@ -30,6 +30,7 @@ func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth, parser
 		// authenticated routes mount here (teams, tasks)
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(parser))
+			r.Get("/me", auth.Me(authSvc))
 		})
 	})
 	return r

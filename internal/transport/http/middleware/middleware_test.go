@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"task_tracker/internal/transport/http/httpkit"
+	"task_tracker/internal/identity"
 	"testing"
 )
 
 type parserMock struct {
-	err    error
-	userID int64
+	err       error
+	principal identity.Principal
 }
 
-func (p parserMock) Parse(raw string) (int64, error) { return p.userID, p.err }
+func (p parserMock) Parse(raw string) (identity.Principal, error) { return p.principal, p.err }
 
 func TestAuthNoHeader(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,18 +51,18 @@ func TestAuthBadToken(t *testing.T) {
 func TestAuthPutsUserIDIntoContext(t *testing.T) {
 	var gotUserID int64
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, ok := httpkit.UserIDFromContext(r.Context())
+		p, ok := identity.FromContext(r.Context())
 		if !ok {
 			t.Fatal("expected user id in context")
 		}
-		gotUserID = id
+		gotUserID = p.UserID
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/teams", nil)
 	req.Header.Set("Authorization", "Bearer valid-token")
 
 	rec := httptest.NewRecorder()
-	Auth(parserMock{userID: 42})(next).ServeHTTP(rec, req)
+	Auth(parserMock{principal: identity.Principal{UserID: 42}})(next).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)

@@ -6,12 +6,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"task_tracker/internal/identity"
 	"task_tracker/internal/transport/http/httpkit"
 	"time"
 )
 
 type TokenParser interface {
-	Parse(raw string) (int64, error)
+	Parse(raw string) (identity.Principal, error)
 }
 
 func Auth(parser TokenParser) func(http.Handler) http.Handler {
@@ -22,12 +23,12 @@ func Auth(parser TokenParser) func(http.Handler) http.Handler {
 				httpkit.WriteError(w, http.StatusUnauthorized, "missing bearer token")
 				return
 			}
-			userID, err := parser.Parse(raw)
+			principal, err := parser.Parse(raw)
 			if err != nil {
 				httpkit.WriteError(w, http.StatusUnauthorized, "invalid token")
 				return
 			}
-			next.ServeHTTP(w, r.WithContext(httpkit.WithUserID(r.Context(), userID)))
+			next.ServeHTTP(w, r.WithContext(identity.WithPrincipal(r.Context(), principal)))
 		})
 	}
 }

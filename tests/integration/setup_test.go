@@ -11,10 +11,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/persistence"
-	"task_tracker/internal/infrastructure/token"
 	"task_tracker/internal/service"
 	"testing"
 	"time"
@@ -27,7 +27,10 @@ import (
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
-var baseURL string
+var (
+	baseURL string
+	authSvc *service.Auth
+)
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -89,13 +92,13 @@ func run(m *testing.M) (int, error) {
 	defer func() { _ = rdb.Close() }()
 
 	log := slog.New(slog.DiscardHandler)
-	jwt := token.NewJWT(token.Config{Secret: strings.Repeat("s", 32), TTL: time.Hour})
-	authSvc := service.NewAuth(persistence.NewUserRepo(db), jwt)
+	idp := identity.NewProvider(identity.Config{Secret: strings.Repeat("s", 32), TTL: time.Hour})
+	authSvc = service.NewAuth(persistence.NewUserRepo(db), idp)
 
 	h := health.New(health.Config{CheckTimeout: time.Second})
 	h.SetReady()
 
-	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, jwt))
+	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, idp))
 	defer srv.Close()
 	baseURL = srv.URL
 
