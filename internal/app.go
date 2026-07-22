@@ -44,11 +44,14 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	idp := identity.NewProvider(cfg.Auth)
 	userRepo := persistence.NewUserRepo(db)
 	authService := service.NewAuth(userRepo, idp)
-	teamsService := service.NewTeams(persistence.NewTeamRepo(db), userRepo, email.NewClient(cfg.Email), log)
+	teamRepo := persistence.NewTeamRepo(db)
+	authz := service.NewAuthorizer(userRepo, teamRepo)
+	teamsService := service.NewTeams(teamRepo, userRepo, email.NewClient(cfg.Email), authz, log)
+	tasksService := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, authz)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
-		Handler:      transport.NewRouter(log, h, authService, teamsService, idp),
+		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, idp),
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 		IdleTimeout:  cfg.HTTP.IdleTimeout,

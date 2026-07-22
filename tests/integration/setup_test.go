@@ -103,12 +103,15 @@ func run(m *testing.M) (int, error) {
 	emailClient := email.NewClient(email.Config{
 		BaseURL: emailMock.srv.URL, Timeout: time.Second, MaxFailures: 3, OpenFor: time.Minute,
 	})
-	teamsSvc := service.NewTeams(persistence.NewTeamRepo(db), userRepo, emailClient, log)
+	teamRepo := persistence.NewTeamRepo(db)
+	authz := service.NewAuthorizer(userRepo, teamRepo)
+	teamsSvc := service.NewTeams(teamRepo, userRepo, emailClient, authz, log)
+	tasksSvc := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, authz)
 
 	h := health.New(health.Config{CheckTimeout: time.Second})
 	h.SetReady()
 
-	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, idp))
+	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, idp))
 	defer srv.Close()
 	baseURL = srv.URL
 

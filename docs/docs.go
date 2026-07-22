@@ -135,6 +135,228 @@ const docTemplate = `{
                 }
             }
         },
+        "/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Задачи команды с фильтрами и пагинацией",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "id команды",
+                        "name": "team_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "todo | in_progress | done",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "id исполнителя",
+                        "name": "assignee_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "максимум записей (1..100, по умолчанию 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "последний увиденный id из next_cursor; без него — первая страница",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_tasks.taskListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "невалидные параметры",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "команда не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Создать задачу (только член команды)",
+                "parameters": [
+                    {
+                        "description": "задача",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_tasks.createTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_tasks.taskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "невалидные данные или assignee не член команды",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "команда не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Обновить задачу (член команды), изменения пишутся в историю",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "id задачи",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "новое состояние",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_tasks.updateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_tasks.taskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "невалидные данные или assignee не член команды",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "нет прав",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "задача не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "История изменений задачи",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "id задачи",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_transport_http_tasks.changeResponse"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "задача не найдена",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/teams": {
             "get": {
                 "security": [
@@ -330,6 +552,117 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_tasks.changeResponse": {
+            "type": "object",
+            "properties": {
+                "change_group_id": {
+                    "description": "ChangeGroupID один на все поля, изменённые одним запросом",
+                    "type": "string"
+                },
+                "changed_at": {
+                    "type": "string"
+                },
+                "changed_by": {
+                    "type": "integer"
+                },
+                "field": {
+                    "type": "string"
+                },
+                "new_value": {
+                    "type": "string"
+                },
+                "old_value": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_tasks.createTaskRequest": {
+            "type": "object",
+            "properties": {
+                "assignee_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_tasks.taskListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_tasks.taskResponse"
+                    }
+                },
+                "next_cursor": {
+                    "description": "NextCursor передаётся в следующий запрос параметром cursor;\nnull — страниц больше нет",
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_tasks.taskResponse": {
+            "type": "object",
+            "properties": {
+                "assignee_id": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_tasks.updateTaskRequest": {
+            "type": "object",
+            "properties": {
+                "assignee_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
                     "type": "string"
                 }
             }

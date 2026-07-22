@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"task_tracker/internal/domain"
@@ -19,14 +18,17 @@ type EmailSender interface {
 	SendInvite(ctx context.Context, to string, teamID int64) error
 }
 
-func NewTeams(teams TeamRepository, users UserRepository, email EmailSender, log *slog.Logger) *Teams {
-	return &Teams{teams: teams, users: users, email: email, log: log}
+func NewTeams(teams TeamRepository, users UserRepository, email EmailSender,
+	authz *Authorizer, log *slog.Logger,
+) *Teams {
+	return &Teams{teams: teams, users: users, email: email, authz: authz, log: log}
 }
 
 type Teams struct {
 	teams TeamRepository
 	users UserRepository
 	email EmailSender
+	authz *Authorizer
 	log   *slog.Logger
 }
 
@@ -47,7 +49,7 @@ func (s *Teams) List(ctx context.Context, actorID int64) ([]domain.TeamMembershi
 }
 
 func (s *Teams) Invite(ctx context.Context, actorID, teamID int64, inviteeEmail string) error {
-	if err := s.authorize(ctx, actorID, teamID, domain.TeamRoleAdmin); err != nil {
+	if err := s.authz.RequireTeamRole(ctx, actorID, teamID, domain.TeamRoleAdmin); err != nil {
 		return err
 	}
 	invitee, err := s.users.ByEmail(ctx, inviteeEmail)
@@ -60,27 +62,6 @@ func (s *Teams) Invite(ctx context.Context, actorID, teamID int64, inviteeEmail 
 	if err := s.email.SendInvite(ctx, inviteeEmail, teamID); err != nil {
 		s.log.Warn("invite email failed",
 			slog.Int64("team_id", teamID), slog.Any("error", err))
-	}
-	return nil
-}
-
-func (s *Teams) authorize(ctx context.Context, actorID, teamID int64, min domain.TeamRole) error {
-	actor, err := s.users.ByID(ctx, actorID)
-	if err != nil {
-		return fmt.Errorf("find actor: %w", err)
-	}
-	if actor.Role == domain.RoleAdmin {
-		return nil
-	}
-	role, err := s.teams.MemberRole(ctx, teamID, actorID)
-	if errors.Is(err, domain.ErrNotFound) {
-		return domain.ErrNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("member role: %w", err)
-	}
-	if !role.AtLeast(min) {
-		return domain.ErrForbidden
 	}
 	return nil
 }
