@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
+	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
@@ -41,11 +42,13 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	)
 
 	idp := identity.NewProvider(cfg.Auth)
-	authService := service.NewAuth(persistence.NewUserRepo(db), idp)
+	userRepo := persistence.NewUserRepo(db)
+	authService := service.NewAuth(userRepo, idp)
+	teamsService := service.NewTeams(persistence.NewTeamRepo(db), userRepo, email.NewClient(cfg.Email), log)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
-		Handler:      transport.NewRouter(log, h, authService, idp),
+		Handler:      transport.NewRouter(log, h, authService, teamsService, idp),
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 		IdleTimeout:  cfg.HTTP.IdleTimeout,

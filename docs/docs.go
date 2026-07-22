@@ -134,6 +134,153 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/teams": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Команды, в которых состоит текущий пользователь",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_transport_http_teams.teamResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "нет токена",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Создать команду, создатель становится owner",
+                "parameters": [
+                    {
+                        "description": "название",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_teams.createTeamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_teams.teamResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "невалидные данные",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "нет токена",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{id}/invite": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Пригласить пользователя в команду (owner/admin команды или глобальный admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "id команды",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "email приглашаемого",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_teams.inviteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "невалидные данные",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "нет прав",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "команда или пользователь не найдены",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "уже в команде",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -176,6 +323,36 @@ const docTemplate = `{
                 "email": {
                     "type": "string"
                 },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_teams.createTeamRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_teams.inviteRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_teams.teamResponse": {
+            "type": "object",
+            "properties": {
                 "id": {
                     "type": "integer"
                 },

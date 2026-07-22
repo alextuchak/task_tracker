@@ -13,7 +13,7 @@ type registerRequest struct {
 
 func (r registerRequest) Validate() error {
 	return v.ValidateStruct(&r,
-		v.Field(&r.Email, v.Required, is.Email),
+		v.Field(&r.Email, v.Required, is.EmailFormat),
 		v.Field(&r.Name, v.Required, v.Length(1, 255)),
 		v.Field(&r.Password, v.Required, v.Length(8, 72)),
 	)

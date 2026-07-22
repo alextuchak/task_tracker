@@ -7,6 +7,7 @@ import (
 	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
 	"task_tracker/internal/infrastructure/config"
+	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
@@ -33,6 +34,7 @@ type Config struct {
 	Env        string                  `env:"ENV" env-default:"local"`
 	Redis      cache.Config            `yaml:"redis"`
 	Auth       identity.Config         `yaml:"auth"`
+	Email      email.Config            `yaml:"email"`
 	HTTP       HTTPConfig              `yaml:"http"`
 	MySQL      persistence.Config      `yaml:"mysql"`
 	Shutdown   lifecycle.CloserConfig  `yaml:"shutdown"`
@@ -78,6 +80,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := config.ValidateField("auth", &c.Auth); err != nil {
+		return err
+	}
+	if err := config.ValidateField("email", &c.Email); err != nil {
 		return err
 	}
 	return nil
