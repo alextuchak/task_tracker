@@ -1,7 +1,6 @@
 package httpkit
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -24,17 +23,4 @@ func WriteError(w http.ResponseWriter, status int, message string) {
 func WriteInternalError(w http.ResponseWriter, err error) {
 	slog.Error("unhandled error", slog.Any("error", err))
 	WriteError(w, http.StatusInternalServerError, "internal error")
-}
-
-type ctxKey int
-
-const ctxKeyUserID ctxKey = iota
-
-func WithUserID(ctx context.Context, userID int64) context.Context {
-	return context.WithValue(ctx, ctxKeyUserID, userID)
-}
-
-func UserIDFromContext(ctx context.Context) (int64, bool) {
-	id, ok := ctx.Value(ctxKeyUserID).(int64)
-	return id, ok
 }

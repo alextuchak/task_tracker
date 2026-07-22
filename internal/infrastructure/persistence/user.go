@@ -39,11 +39,44 @@ func (r *UserRepo) Create(ctx context.Context, u domain.User) (int64, error) {
 	return id, nil
 }
 
+func (r *UserRepo) ByID(ctx context.Context, id int64) (domain.User, error) {
+	var u domain.User
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, email, name, role, created_at FROM users WHERE id = ?`, id,
+	).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.User{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.User{}, fmt.Errorf("select user by id: %w", err)
+	}
+	return u, nil
+}
+
+// GrantAdmin идемпотентен: повторный вызов для админа — no-op.
+func (r *UserRepo) GrantAdmin(ctx context.Context, email string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET role = ? WHERE email = ?`, domain.RoleAdmin, email)
+	if err != nil {
+		return fmt.Errorf("grant admin: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if affected == 0 {
+		if _, err := r.ByEmail(ctx, email); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *UserRepo) ByEmail(ctx context.Context, email string) (domain.User, error) {
 	var u domain.User
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, created_at FROM users WHERE email = ?`, email,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.CreatedAt)
+		`SELECT id, email, password_hash, name, role, created_at FROM users WHERE email = ?`, email,
+	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.User{}, domain.ErrNotFound
 	}

@@ -43,7 +43,8 @@ func registerHandler(svc *service.Auth) http.HandlerFunc {
 		u, err := svc.Register(r.Context(), req.Email, req.Name, req.Password)
 		switch {
 		case err == nil:
-			httpkit.WriteJSON(w, http.StatusCreated, userResponse{ID: u.ID, Email: u.Email, Name: u.Name})
+			httpkit.WriteJSON(w, http.StatusCreated,
+				userResponse{ID: u.ID, Email: u.Email, Name: u.Name, Role: string(u.Role)})
 		case errors.Is(err, domain.ErrEmailTaken):
 			httpkit.WriteError(w, http.StatusConflict, domain.ErrEmailTaken.Error())
 		default:

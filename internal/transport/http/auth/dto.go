@@ -35,6 +35,7 @@ func (r loginRequest) Validate() error {
 type userResponse struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
+	Role  string `json:"role"`
 	ID    int64  `json:"id"`
 }
 

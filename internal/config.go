@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
 	"task_tracker/internal/infrastructure/config"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
-	"task_tracker/internal/infrastructure/token"
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -32,7 +32,7 @@ type Config struct {
 	AppVersion string                  `env:"APP_VERSION" env-default:"dev"`
 	Env        string                  `env:"ENV" env-default:"local"`
 	Redis      cache.Config            `yaml:"redis"`
-	Auth       token.Config            `yaml:"auth"`
+	Auth       identity.Config         `yaml:"auth"`
 	HTTP       HTTPConfig              `yaml:"http"`
 	MySQL      persistence.Config      `yaml:"mysql"`
 	Shutdown   lifecycle.CloserConfig  `yaml:"shutdown"`

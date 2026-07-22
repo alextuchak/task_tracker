@@ -12,6 +12,8 @@ import (
 type UserRepository interface {
 	Create(ctx context.Context, u domain.User) (int64, error)
 	ByEmail(ctx context.Context, email string) (domain.User, error)
+	ByID(ctx context.Context, id int64) (domain.User, error)
+	GrantAdmin(ctx context.Context, email string) error
 }
 
 type TokenIssuer interface {
@@ -27,23 +29,39 @@ type Auth struct {
 	tokens TokenIssuer
 }
 
-type RegisteredUser struct {
+type User struct {
 	Email string
 	Name  string
+	Role  domain.Role
 	ID    int64
 }
 
-func (a *Auth) Register(ctx context.Context, email, name, password string) (RegisteredUser, error) {
+func (a *Auth) Register(ctx context.Context, email, name, password string) (User, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return RegisteredUser{}, fmt.Errorf("hash password: %w", err)
+		return User{}, fmt.Errorf("hash password: %w", err)
 	}
 
 	id, err := a.users.Create(ctx, domain.User{Email: email, Name: name, PasswordHash: string(hash)})
 	if err != nil {
-		return RegisteredUser{}, fmt.Errorf("create user: %w", err)
+		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return RegisteredUser{ID: id, Email: email, Name: name}, nil
+	return User{ID: id, Email: email, Name: name, Role: domain.RoleUser}, nil
+}
+
+func (a *Auth) UserByID(ctx context.Context, id int64) (User, error) {
+	u, err := a.users.ByID(ctx, id)
+	if err != nil {
+		return User{}, fmt.Errorf("find user by id: %w", err)
+	}
+	return User{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role}, nil
+}
+
+func (a *Auth) GrantAdmin(ctx context.Context, email string) error {
+	if err := a.users.GrantAdmin(ctx, email); err != nil {
+		return fmt.Errorf("grant admin: %w", err)
+	}
+	return nil
 }
 
 func (a *Auth) Login(ctx context.Context, email, password string) (string, error) {
