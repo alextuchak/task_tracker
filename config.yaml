@@ -27,3 +27,9 @@ health:
 auth:
   secret: "local-dev-secret-change-me-please-32b"
   ttl: 24h
+
+email:
+  base_url: "http://email-service:8080"
+  timeout: 3s
+  max_failures: 3
+  open_for: 30s

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
+	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/persistence"
 	"task_tracker/internal/service"
@@ -28,8 +29,9 @@ import (
 )
 
 var (
-	baseURL string
-	authSvc *service.Auth
+	baseURL   string
+	authSvc   *service.Auth
+	emailMock *emailServiceMock
 )
 
 func TestMain(m *testing.M) {
@@ -91,14 +93,22 @@ func run(m *testing.M) (int, error) {
 	rdb := cache.NewRedis(cache.Config{Addr: redisAddr})
 	defer func() { _ = rdb.Close() }()
 
+	emailMock = newEmailServiceMock()
+	defer emailMock.srv.Close()
+
 	log := slog.New(slog.DiscardHandler)
 	idp := identity.NewProvider(identity.Config{Secret: strings.Repeat("s", 32), TTL: time.Hour})
-	authSvc = service.NewAuth(persistence.NewUserRepo(db), idp)
+	userRepo := persistence.NewUserRepo(db)
+	authSvc = service.NewAuth(userRepo, idp)
+	emailClient := email.NewClient(email.Config{
+		BaseURL: emailMock.srv.URL, Timeout: time.Second, MaxFailures: 3, OpenFor: time.Minute,
+	})
+	teamsSvc := service.NewTeams(persistence.NewTeamRepo(db), userRepo, emailClient, log)
 
 	h := health.New(health.Config{CheckTimeout: time.Second})
 	h.SetReady()
 
-	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, idp))
+	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, idp))
 	defer srv.Close()
 	baseURL = srv.URL
 
