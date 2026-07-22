@@ -7,6 +7,7 @@ import (
 	"task_tracker/internal/service"
 	"task_tracker/internal/transport/http/auth"
 	"task_tracker/internal/transport/http/middleware"
+	"task_tracker/internal/transport/http/tasks"
 	"task_tracker/internal/transport/http/teams"
 
 	_ "task_tracker/docs" // generated swagger spec
@@ -17,7 +18,7 @@ import (
 )
 
 func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
-	teamsSvc *service.Teams, parser middleware.TokenParser,
+	teamsSvc *service.Teams, tasksSvc *service.Tasks, parser middleware.TokenParser,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer)
@@ -35,6 +36,7 @@ func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 			r.Use(middleware.Auth(parser))
 			r.Get("/me", auth.Me(authSvc))
 			r.Mount("/teams", teams.Routes(teamsSvc))
+			r.Mount("/tasks", tasks.Routes(tasksSvc))
 		})
 	})
 	return r
