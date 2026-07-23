@@ -81,6 +81,11 @@ tasks:
       - swag init -g cmd/api/main.go -o docs --outputTypes go,json --parseDependency --parseInternal
     desc: "Regenerate swagger spec from handler annotations"
 
+  loadgen:
+    cmds:
+      - go run ./cmd/loadgen
+    desc: "Demo traffic: 600 users under the per-user rate limit, ~900 rps for 3m (needs running stack)"
+
   pre-commit-install:
     cmds:
       - which pre-commit || pipx install pre-commit || brew install pre-commit

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -171,7 +172,7 @@ func TestRateLimitByIPRejects(t *testing.T) {
 	req.RemoteAddr = "10.0.0.7:51234"
 
 	rec := httptest.NewRecorder()
-	RateLimitByIP(limiterMock{allowed: false, retryAfter: 10 * time.Second})(next).ServeHTTP(rec, req)
+	RateLimitByIP(limiterMock{allowed: false, retryAfter: 10 * time.Second}, nil)(next).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", rec.Code)
@@ -187,9 +188,52 @@ func TestRateLimitByIPAllows(t *testing.T) {
 	req.RemoteAddr = "10.0.0.7:51234"
 
 	rec := httptest.NewRecorder()
-	RateLimitByIP(limiterMock{allowed: true})(next).ServeHTTP(rec, req)
+	RateLimitByIP(limiterMock{allowed: true}, nil)(next).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestRateLimitByIPTrustedBypass(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	_, trusted, err := net.ParseCIDR("10.0.0.0/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	req.RemoteAddr = "10.0.0.7:51234"
+
+	rec := httptest.NewRecorder()
+	// the limiter would reject, but the trusted network skips it entirely
+	RateLimitByIP(limiterMock{allowed: false}, []*net.IPNet{trusted})(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for trusted network, got %d", rec.Code)
+	}
+}
+
+func TestRateLimitByIPUntrustedStillLimited(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next must not be called for untrusted ip over the limit")
+	})
+
+	_, trusted, err := net.ParseCIDR("127.0.0.0/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	req.RemoteAddr = "203.0.113.5:44444"
+
+	rec := httptest.NewRecorder()
+	RateLimitByIP(limiterMock{allowed: false, retryAfter: 10 * time.Second}, []*net.IPNet{trusted})(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rec.Code)
 	}
 }

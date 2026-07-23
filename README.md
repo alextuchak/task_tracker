@@ -1,35 +1,31 @@
+<div align="center">
+
 # Task Tracker
 
-[![CI](https://github.com/alextuchak/task_tracker/actions/workflows/ci.yaml/badge.svg)](https://github.com/alextuchak/task_tracker/actions/workflows/ci.yaml)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/alextuchak/task_tracker)](go.mod)
-[![Release](https://img.shields.io/github/v/release/alextuchak/task_tracker)](https://github.com/alextuchak/task_tracker/releases)
-[![golangci-lint](https://img.shields.io/badge/lint-golangci--lint-00ADD8?logo=go)](.golangci.yaml)
-[![govulncheck](https://img.shields.io/badge/security-govulncheck-00ADD8?logo=go)](https://go.dev/blog/vuln)
-[![gosec](https://img.shields.io/badge/security-gosec-00ADD8?logo=go)](https://github.com/securego/gosec)
-[![testcontainers](https://img.shields.io/badge/tests-testcontainers-2496ED?logo=docker&logoColor=white)](tests/integration)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+Team task management REST API — roles, transactional audit history, full observability.
 
-REST API for team task management: teams with role-based access, task audit history,
-JWT authentication, Redis caching and rate limiting, Prometheus observability.
+Go · chi · MySQL · Redis · Prometheus · Grafana · testcontainers
+
+[![CI](https://img.shields.io/github/actions/workflow/status/alextuchak/task_tracker/ci.yaml?style=flat-square&label=ci)](https://github.com/alextuchak/task_tracker/actions/workflows/ci.yaml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/alextuchak/task_tracker?style=flat-square)](go.mod)
+[![Release](https://img.shields.io/github/v/release/alextuchak/task_tracker?style=flat-square)](https://github.com/alextuchak/task_tracker/releases)
+[![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
+
+[Features](#features) · [Quick start](#quick-start) · [Architecture](#architecture) · [API](#api) · [Observability](#observability) · [Testing](#testing) · [Design decisions](#design-decisions) · [Development](#development)
+
+<img src="docs/img/grafana.jpg" alt="Grafana dashboard under ~1000 rps" width="800">
+
+</div>
 
 ## Features
 
-- **Teams & RBAC** — team roles (`owner`/`admin`/`member`) checked per request against the
-  database, global `admin` role with full bypass, invitations with best-effort email delivery
-  behind a circuit breaker
-- **Tasks with audit history** — every change is diffed field-by-field and written to
-  `task_history` in the same transaction as the update; changes from one request share a
-  `change_group_id` (Jira-style change groups)
-- **Keyset pagination** everywhere — `cursor`/`next_cursor` instead of `LIMIT/OFFSET`:
-  stable under concurrent inserts, no deep-page degradation
-- **Redis** — task list cache (5 min TTL, invalidation on write) and GCRA rate limiting
-  (per-user on authenticated routes, per-IP on `register`/`login`)
-- **Admin analytics** — team stats, top-3 task creators per team (window functions),
-  data integrity report (anti-join), all cursor-paginated
-- **Observability** — Prometheus metrics with a provisioned Grafana dashboard,
-  structured JSON logs, `/livez` + `/readyz` with a three-state readiness gate
-- **Operational hygiene** — two-phase graceful shutdown (drain → release), startup
-  connection pings, migrations run in a dedicated container before the app starts
+- **Teams & RBAC** — team roles resolved per request, global admin bypass in one authorizer
+- **Audited tasks** — field-level history written in the same transaction as the update
+- **Keyset pagination** — cursor-based everywhere, no deep-page degradation
+- **Redis** — task list cache (5 min TTL) and GCRA rate limiting (per-user and per-IP)
+- **Admin analytics** — window functions, aggregations and an integrity anti-join report
+- **Observability** — Prometheus metrics, provisioned Grafana dashboard, JSON logs
+- **Operational hygiene** — two-phase graceful shutdown, startup pings, migration container
 
 ## Quick start
 
@@ -37,17 +33,14 @@ JWT authentication, Redis caching and rate limiting, Prometheus observability.
 docker compose up -d --build
 ```
 
-That single command starts MySQL, Redis, the migrator (applies goose migrations and
-exits), the API, Prometheus and Grafana.
+One command starts MySQL, Redis, the migrator, the API, Prometheus and Grafana.
 
-| Endpoint            | URL                                    |
-|---------------------|----------------------------------------|
-| API                 | http://localhost:8080/api/v1           |
-| Swagger UI          | http://localhost:8080/swagger/         |
-| Prometheus          | http://localhost:9090                  |
-| Grafana (admin/admin) | http://localhost:3000                |
-
-Try it:
+| Endpoint   | URL                            | Credentials |
+|------------|--------------------------------|-------------|
+| API        | http://localhost:8080/api/v1   | —           |
+| Swagger UI | http://localhost:8080/swagger/ | —           |
+| Prometheus | http://localhost:9090          | —           |
+| Grafana    | http://localhost:3000          | admin/admin |
 
 ```bash
 # register and log in
@@ -56,17 +49,49 @@ curl -X POST localhost:8080/api/v1/register \
 TOKEN=$(curl -s -X POST localhost:8080/api/v1/login \
   -d '{"email":"ada@example.com","password":"password123"}' | jq -r .access_token)
 
-# create a team and a task
+# create a team and a task, then complete it
 curl -X POST localhost:8080/api/v1/teams \
   -H "Authorization: Bearer $TOKEN" -d '{"name":"backend"}'
 curl -X POST localhost:8080/api/v1/tasks \
   -H "Authorization: Bearer $TOKEN" -d '{"team_id":1,"title":"ship it"}'
-
-# complete it and read the audit trail
 curl -X PUT localhost:8080/api/v1/tasks/1 \
   -H "Authorization: Bearer $TOKEN" -d '{"title":"ship it","status":"done"}'
+
+# read the audit trail
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/tasks/1/history
 ```
+
+```json
+[
+  {"change_group_id": "d41d8cd9…", "field": "created", "old_value": "", "new_value": "", "changed_by": 1},
+  {"change_group_id": "9e107d9d…", "field": "status", "old_value": "todo", "new_value": "done", "changed_by": 1}
+]
+```
+
+Fields changed by one request share a `change_group_id` — Jira-style change groups.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    C[Client] --> MW
+
+    subgraph app [task-tracker]
+        MW[middleware<br/>metrics · logging · auth · rate limit] --> H[handlers<br/>auth · teams · tasks · analytics]
+        H --> S[services<br/>business logic · authorizer]
+        S --> R[repositories]
+    end
+
+    R --> M[(MySQL)]
+    S --> RC[(Redis<br/>cache + limits)]
+    S -. circuit breaker .-> E[email service]
+    P[Prometheus] -- scrape /metrics --> MW
+    G[Grafana] --> P
+```
+
+JWT middleware resolves identity without touching the database; authorization
+(team roles, admin bypass) happens in the service layer per request. Repositories
+own raw SQL; the audit trail is written in the same transaction as the update.
 
 ## API
 
@@ -86,28 +111,25 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/tasks/1/history
 
 Full contract with schemas: **Swagger UI** at `/swagger/`.
 
-Authorization model: the JWT carries identity only (`sub`, no roles — they would go
-stale). Team roles are resolved per request from `team_members`; the global `admin`
-bypass lives in a single authorizer used by every service.
+The JWT carries identity only (`sub`, no roles — they would go stale). Team roles
+are resolved per request from the database; the global admin bypass lives in a
+single authorizer used by every service.
 
-## Admin CLI
+## Observability
 
-The first admin is created by an operator, not by env variables:
+Prometheus scrapes `/metrics` every 5s; Grafana auto-provisions the dashboard
+shown above: an instant-value row, request rate, error rate, latency percentiles
+(log scale) and runtime stats. The demo stack sustains ~900 rps locally with
+p95 around 23ms and p99 around 120ms:
 
 ```bash
-# register a user through the API first, then:
-go run ./cmd/cli grant-admin --email ada@example.com
+task loadgen   # 600 users, each within the 100 req/min per-user limit, for 3 minutes
 ```
 
-The command is idempotent and reuses the application config (`CONFIG_PATH`).
-
-## Configuration
-
-The YAML file is the single source of truth, mounted into the container
-(`CONFIG_PATH=/config.yaml`) — the same model as a Kubernetes ConfigMap. Environment
-variables are used only for what never lives in the file: `CONFIG_PATH`, `ENV`,
-`APP_VERSION`. See [config.yaml](config.yaml) for all knobs: HTTP timeouts, MySQL pool,
-Redis, JWT secret/TTL, rate limits, circuit breaker thresholds, shutdown budgets.
+Rate limits stay at their production values during the demo: throughput comes
+from many users, not from lifting the limits. Localhost and the Docker network
+are in `trusted_cidrs`, so only the anonymous per-IP limit is bypassed for the
+generator — as it would be for a load balancer in production.
 
 ## Testing
 
@@ -123,48 +145,54 @@ API. Mocks exist only for the unmanaged dependency (the external email service �
 `httptest` mock server with switchable failure mode). Unit tests cover pure logic:
 JWT, middlewares, lifecycle, readiness states.
 
+## Design decisions
+
+- **Keyset over offset pagination** — index seek instead of read-and-discard; verified
+  with `EXPLAIN ANALYZE` on 3M+ rows (~40k scanned rows per page down to exactly `limit`)
+- **Audit in the write transaction** — application-level audit keeps the actor and
+  intent; same-transaction writes make history drift impossible
+- **No task status state machine** — any-to-any transitions like GitHub Issues;
+  users must be able to roll a status back
+- **Local circuit breaker, fresh-start closed** — per-instance state is the canonical
+  choice; a shared breaker would add a Redis round-trip to every best-effort email
+- **Centralized rate limiting** — GCRA counters in Redis solve multi-replica fairness
+  and restart persistence at once; fails open, the limiter is protection, not a feature;
+  trusted CIDRs (load balancers, internal infra) bypass only the anonymous per-IP limit
+- **Documented tradeoffs over premature optimization** — top-creators runs window
+  functions over live data (admin-only, seconds on millions of rows); the integrity
+  report is a full-table anti-join by design
+
 ## Development
 
 ```bash
-task -l              # all tasks
-task check           # gofumpt + golangci-lint
-task swagger         # regenerate OpenAPI from annotations
-task pre-commit-install  # git hooks: fmt, lint, tidy, tests, swagger freshness
+task -l                  # all tasks
+task check               # gofumpt + golangci-lint
+task swagger             # regenerate OpenAPI from annotations
+task pre-commit-install  # hooks: fmt, lint, tidy, tests, swagger freshness
 ```
 
-CI runs four parallel jobs on every PR commit (`lint`, `govulncheck`, `test-unit`,
-`test-integration`); merges to `main` release automatically via semantic-release
-(conventional commits → semver tag + changelog).
+CI runs five parallel jobs on every PR commit — `lint` (golangci-lint), `govulncheck`,
+`gosec`, `test-unit`, `test-integration` — and merges to `main` release automatically
+via semantic-release (conventional commits → semver tag + changelog).
 
-## Design decisions
+## Configuration
 
-- **Keyset over offset pagination** — `WHERE id > cursor ORDER BY id LIMIT n` seeks by
-  index instead of reading and discarding offset rows; verified with `EXPLAIN ANALYZE`
-  on 3M+ rows (query plans went from ~40k rows scanned per page to exactly `limit`).
-  Composite indexes `(team_id, id)` / `(team_id, status, id)` carry the list queries;
-  a `FORCE INDEX` hint pins the plan where the MySQL optimizer mispredicts on
-  cursor+LIMIT shapes.
-- **Audit in the write transaction** — application-level audit (not triggers, not CDC)
-  keeps the actor and business intent, and the same-transaction write makes history
-  drift impossible.
-- **No task status state machine** — any-to-any transitions, like GitHub Issues and
-  Linear: users make mistakes and must be able to roll a status back. `completed_at`
-  is managed on the `done` boundary.
-- **Local circuit breaker, fresh-start closed** — per-instance state is the canonical
-  choice (Hystrix/resilience4j/Polly); a shared-state breaker would add a Redis
-  round-trip and a new failure mode to every call for a best-effort email.
-- **Centralized rate limiting** — GCRA counters live in Redis, which solves
-  multi-replica fairness and restart persistence with one mechanism. Fails open:
-  the limiter is protection, not a feature.
-- **Analytics tradeoffs** — top-creators computes window functions over a month of
-  tasks per page of teams (~seconds on millions of rows, admin-only); the integrity
-  report is a full-table anti-join by design. Both are documented rather than
-  prematurely materialized.
+The YAML file is the single source of truth, mounted into the container
+(`CONFIG_PATH=/config.yaml`). Environment variables carry only what never lives in
+the file: `CONFIG_PATH`, `ENV`, `APP_VERSION`. See [config.yaml](config.yaml) for all
+knobs: HTTP timeouts, MySQL pool, Redis, JWT secret/TTL, rate limits, circuit breaker
+thresholds, shutdown budgets.
+
+The first admin is granted by an operator, not by env variables:
+
+```bash
+go run ./cmd/cli grant-admin --email ada@example.com
+```
 
 ## Project layout
 
-```
-cmd/api, cmd/cli          entrypoints
+```text
+cmd/                      api, cli (admin ops), loadgen (demo traffic)
 internal/
   domain/                 entities and domain errors, zero dependencies
   service/                business logic, owns repository interfaces, single authorizer
@@ -177,3 +205,7 @@ migrations/               goose SQL migrations (run by the migrator container)
 tests/integration/        sociable API tests on testcontainers
 deploy/                   prometheus + grafana provisioning
 ```
+
+## License
+
+[MIT](LICENSE)
