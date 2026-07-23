@@ -21,7 +21,7 @@ import (
 
 func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 	teamsSvc *service.Teams, tasksSvc *service.Tasks, analyticsSvc *service.Analytics,
-	parser middleware.TokenParser,
+	parser middleware.TokenParser, userLimiter, ipLimiter middleware.RateLimiter,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer)
@@ -34,10 +34,14 @@ func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Mount("/", auth.Routes(authSvc))
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RateLimitByIP(ipLimiter))
+			r.Mount("/", auth.Routes(authSvc))
+		})
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(parser))
+			r.Use(middleware.RateLimit(userLimiter))
 			r.Get("/me", auth.Me(authSvc))
 			r.Mount("/teams", teams.Routes(teamsSvc))
 			r.Mount("/tasks", tasks.Routes(tasksSvc))

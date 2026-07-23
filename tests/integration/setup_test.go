@@ -17,6 +17,7 @@ import (
 	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/persistence"
+	"task_tracker/internal/infrastructure/ratelimit"
 	"task_tracker/internal/service"
 	"testing"
 	"time"
@@ -111,12 +112,14 @@ func run(m *testing.M) (int, error) {
 	tasksCache := cache.NewTasks(rdb, time.Minute*5, log)
 	tasksSvc := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
 	analyticsSvc := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
+	userLimiter := ratelimit.New(rdb, ratelimit.Config{Requests: 150, Window: time.Minute}, log)
+	ipLimiter := ratelimit.New(rdb, ratelimit.Config{Requests: 100000, Window: time.Minute}, log)
 	testDB = db
 
 	h := health.New(health.Config{CheckTimeout: time.Second})
 	h.SetReady()
 
-	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, analyticsSvc, idp))
+	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, analyticsSvc, idp, userLimiter, ipLimiter))
 	defer srv.Close()
 	baseURL = srv.URL
 

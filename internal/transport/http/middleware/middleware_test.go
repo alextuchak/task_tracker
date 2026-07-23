@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"task_tracker/internal/identity"
 	"testing"
+	"time"
 )
 
 type parserMock struct {
@@ -113,5 +115,81 @@ func TestLoggingSkipsProbes(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("probes must not be logged, got: %s", buf.String())
+	}
+}
+
+type limiterMock struct {
+	allowed    bool
+	retryAfter time.Duration
+}
+
+func (l limiterMock) Allow(ctx context.Context, key string) (bool, time.Duration) {
+	return l.allowed, l.retryAfter
+}
+
+func TestRateLimitAllows(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req = req.WithContext(identity.WithPrincipal(req.Context(), identity.Principal{UserID: 42}))
+
+	rec := httptest.NewRecorder()
+	RateLimit(limiterMock{allowed: true})(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestRateLimitRejects(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next must not be called when limit exceeded")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req = req.WithContext(identity.WithPrincipal(req.Context(), identity.Principal{UserID: 42}))
+
+	rec := httptest.NewRecorder()
+	RateLimit(limiterMock{allowed: false, retryAfter: 30 * time.Second})(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") != "31" {
+		t.Fatalf("expected Retry-After 31, got %q", rec.Header().Get("Retry-After"))
+	}
+}
+
+func TestRateLimitByIPRejects(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next must not be called when limit exceeded")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	req.RemoteAddr = "10.0.0.7:51234"
+
+	rec := httptest.NewRecorder()
+	RateLimitByIP(limiterMock{allowed: false, retryAfter: 10 * time.Second})(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rec.Code)
+	}
+}
+
+func TestRateLimitByIPAllows(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/login", nil)
+	req.RemoteAddr = "10.0.0.7:51234"
+
+	rec := httptest.NewRecorder()
+	RateLimitByIP(limiterMock{allowed: true})(next).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }

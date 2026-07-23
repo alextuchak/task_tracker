@@ -12,6 +12,7 @@ import (
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
+	"task_tracker/internal/infrastructure/ratelimit"
 	"task_tracker/internal/service"
 
 	transport "task_tracker/internal/transport/http"
@@ -50,10 +51,12 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	tasksCache := cache.NewTasks(rdb, cfg.Redis.TasksTTL, log)
 	tasksService := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
 	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
+	userLimiter := ratelimit.New(rdb, cfg.RateLimit, log)
+	ipLimiter := ratelimit.New(rdb, cfg.RateLimitPublic, log)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
-		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, idp),
+		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, idp, userLimiter, ipLimiter),
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 		IdleTimeout:  cfg.HTTP.IdleTimeout,
