@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
-	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
@@ -16,6 +15,9 @@ import (
 	"task_tracker/internal/service"
 
 	transport "task_tracker/internal/transport/http"
+
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
+	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
 )
 
 func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Logger) (*App, error) {
@@ -42,12 +44,16 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 		func(ctx context.Context) error { return rdb.Ping(ctx).Err() },
 	)
 
+	getter := trmsql.DefaultCtxGetter
+	trManager := manager.Must(trmsql.NewDefaultFactory(db))
+
 	idp := identity.NewProvider(cfg.Auth)
 	userRepo := persistence.NewUserRepo(db)
 	authService := service.NewAuth(userRepo, idp)
-	teamRepo := persistence.NewTeamRepo(db)
+	teamRepo := persistence.NewTeamRepo(db, getter)
+	outboxRepo := persistence.NewOutboxRepo(db, getter)
 	authz := service.NewAuthorizer(userRepo, teamRepo)
-	teamsService := service.NewTeams(teamRepo, userRepo, email.NewClient(cfg.Email), authz, log)
+	teamsService := service.NewTeams(teamRepo, userRepo, outboxRepo, trManager, authz)
 	tasksCache := cache.NewTasks(rdb, cfg.Redis.TasksTTL, log)
 	tasksService := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
 	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)

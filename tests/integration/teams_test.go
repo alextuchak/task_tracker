@@ -158,28 +158,42 @@ func TestInviteUnknownEmail(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-func TestInviteSendsEmail(t *testing.T) {
+func TestInviteEnqueuesEmail(t *testing.T) {
 	owner := registerAndLogin(t, "em-owner@teams.io")
 	registerAndLogin(t, "em-invitee@teams.io")
 	teamID := createTeam(t, owner, "em-team")
-	before := emailMock.received.Load()
 
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
 		`{"email":"em-invitee@teams.io"}`)
 
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
-	assert.Equal(t, before+1, emailMock.received.Load())
+
+	var count int
+	err := testDB.QueryRow(
+		`SELECT COUNT(*) FROM email_outbox WHERE recipient = ? AND status = 'pending'`,
+		"em-invitee@teams.io").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }
 
-func TestInviteSucceedsWhenEmailServiceDown(t *testing.T) {
-	owner := registerAndLogin(t, "down-owner@teams.io")
-	registerAndLogin(t, "down-invitee@teams.io")
-	teamID := createTeam(t, owner, "down-team")
-	emailMock.failing.Store(true)
-	t.Cleanup(func() { emailMock.failing.Store(false) })
+func TestInviteEnqueueIsAtomicWithMembership(t *testing.T) {
+	owner := registerAndLogin(t, "atomic-owner@teams.io")
+	registerAndLogin(t, "atomic-invitee@teams.io")
+	teamID := createTeam(t, owner, "atomic-team")
 
-	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"down-invitee@teams.io"}`)
+	// invite the same member twice: the second AddMember hits a duplicate and
+	// rolls the whole transaction back, so no second outbox row is written.
+	first := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
+		`{"email":"atomic-invitee@teams.io"}`)
+	require.Equal(t, http.StatusNoContent, first.StatusCode)
+	second := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
+		`{"email":"atomic-invitee@teams.io"}`)
+	require.Equal(t, http.StatusConflict, second.StatusCode)
 
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	var count int
+	err := testDB.QueryRow(
+		`SELECT COUNT(*) FROM email_outbox WHERE recipient = ?`,
+		"atomic-invitee@teams.io").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
 }

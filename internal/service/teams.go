@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"task_tracker/internal/domain"
+	"task_tracker/internal/infrastructure/outbox"
 )
 
 type TeamRepository interface {
@@ -14,26 +14,37 @@ type TeamRepository interface {
 	AddMember(ctx context.Context, teamID, userID int64, role domain.TeamRole) error
 }
 
-type EmailSender interface {
-	SendInvite(ctx context.Context, to string, teamID int64) error
+type OutboxWriter interface {
+	Enqueue(ctx context.Context, msg outbox.Message) error
 }
 
-func NewTeams(teams TeamRepository, users UserRepository, email EmailSender,
-	authz *Authorizer, log *slog.Logger,
+type TxManager interface {
+	Do(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+func NewTeams(teams TeamRepository, users UserRepository, outbox OutboxWriter,
+	tx TxManager, authz *Authorizer,
 ) *Teams {
-	return &Teams{teams: teams, users: users, email: email, authz: authz, log: log}
+	return &Teams{teams: teams, users: users, outbox: outbox, tx: tx, authz: authz}
 }
 
 type Teams struct {
-	teams TeamRepository
-	users UserRepository
-	email EmailSender
-	authz *Authorizer
-	log   *slog.Logger
+	teams  TeamRepository
+	users  UserRepository
+	outbox OutboxWriter
+	tx     TxManager
+	authz  *Authorizer
 }
 
 func (s *Teams) Create(ctx context.Context, actorID int64, name string) (domain.TeamMembership, error) {
-	teamID, err := s.teams.Create(ctx, name, actorID)
+	var teamID int64
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		var err error
+		if teamID, err = s.teams.Create(ctx, name, actorID); err != nil {
+			return err
+		}
+		return s.teams.AddMember(ctx, teamID, actorID, domain.TeamRoleOwner)
+	})
 	if err != nil {
 		return domain.TeamMembership{}, fmt.Errorf("create team: %w", err)
 	}
@@ -56,12 +67,16 @@ func (s *Teams) Invite(ctx context.Context, actorID, teamID int64, inviteeEmail 
 	if err != nil {
 		return fmt.Errorf("find invitee: %w", err)
 	}
-	if err := s.teams.AddMember(ctx, teamID, invitee.ID, domain.TeamRoleMember); err != nil {
-		return fmt.Errorf("add member: %w", err)
-	}
-	if err := s.email.SendInvite(ctx, inviteeEmail, teamID); err != nil {
-		s.log.Warn("invite email failed",
-			slog.Int64("team_id", teamID), slog.Any("error", err))
-	}
-	return nil
+	// membership and the invite email are committed together: the email is
+	// queued in the outbox, never sent inline, and drained by the relay.
+	return s.tx.Do(ctx, func(ctx context.Context) error {
+		if err := s.teams.AddMember(ctx, teamID, invitee.ID, domain.TeamRoleMember); err != nil {
+			return err
+		}
+		return s.outbox.Enqueue(ctx, outbox.Message{
+			Recipient: inviteeEmail,
+			Subject:   "You have been invited to a team",
+			Body:      fmt.Sprintf("You have been added to team %d. Open Task Tracker to get started.", teamID),
+		})
+	})
 }
