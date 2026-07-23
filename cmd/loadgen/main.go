@@ -42,7 +42,7 @@ func main() {
 	deadline := time.Now().Add(*duration)
 	for id := range *users {
 		wg.Go(func() {
-			time.Sleep(time.Duration(rand.Intn(30000)) * time.Millisecond)
+			time.Sleep(time.Duration(rand.Intn(30000)) * time.Millisecond) // #nosec G404 -- jitter, not security
 			w, err := setupWorker(*base, id)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "worker %d setup: %v\n", id, err)
@@ -117,7 +117,7 @@ func setupWorker(base string, id int) (*worker, error) {
 func (w *worker) run(deadline time.Time, pause time.Duration) {
 	statusesList := []string{"todo", "in_progress", "done"}
 	for time.Now().Before(deadline) {
-		switch rand.Intn(10) {
+		switch rand.Intn(10) { // #nosec G404 -- traffic mix, not security
 		case 0, 1, 2:
 			w.get(fmt.Sprintf("/api/v1/tasks?team_id=%d", w.teamID), w.token)
 		case 3:
@@ -127,8 +127,8 @@ func (w *worker) run(deadline time.Time, pause time.Duration) {
 		case 6:
 			w.get("/api/v1/teams", w.token)
 		case 7:
-			taskID := w.tasks[rand.Intn(len(w.tasks))]
-			status := statusesList[rand.Intn(len(statusesList))]
+			taskID := w.tasks[rand.Intn(len(w.tasks))]           // #nosec G404 -- random pick, not security
+			status := statusesList[rand.Intn(len(statusesList))] // #nosec G404 -- random pick, not security
 			_, _ = w.request(http.MethodPut, fmt.Sprintf("/api/v1/tasks/%d", taskID),
 				map[string]any{"title": "load task", "status": status}, w.token)
 		case 8:
@@ -136,7 +136,7 @@ func (w *worker) run(deadline time.Time, pause time.Duration) {
 		case 9:
 			w.get("/api/v1/tasks/999999999/history", w.token)
 		}
-		time.Sleep(pause + time.Duration(rand.Intn(60))*time.Millisecond)
+		time.Sleep(pause + time.Duration(rand.Intn(60))*time.Millisecond) // #nosec G404 -- jitter, not security
 	}
 }
 
