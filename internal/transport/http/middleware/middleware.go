@@ -1,14 +1,19 @@
 // Package middleware holds all http middlewares: auth, logging,
-// and later metrics/rate-limit.
+// metrics and later rate-limit.
 package middleware
 
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"task_tracker/internal/identity"
 	"task_tracker/internal/transport/http/httpkit"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type TokenParser interface {
@@ -33,15 +38,57 @@ func Auth(parser TokenParser) func(http.Handler) http.Handler {
 	}
 }
 
-var skipLogging = map[string]struct{}{
-	"/livez":  {},
-	"/readyz": {},
+var skipObservability = map[string]struct{}{
+	"/livez":   {},
+	"/readyz":  {},
+	"/metrics": {},
+}
+
+var (
+	requestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "http_requests_total",
+		Help: "Total http requests",
+	}, []string{"method", "route", "status"})
+	requestErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "http_request_errors_total",
+		Help: "Total http responses with 5xx status",
+	}, []string{"method", "route", "status"})
+	requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "http_request_duration_seconds",
+		Help:    "Http request duration",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"method", "route"})
+)
+
+func Metrics() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := skipObservability[r.URL.Path]; ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			start := time.Now()
+			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(sw, r)
+
+			route := chi.RouteContext(r.Context()).RoutePattern()
+			if route == "" {
+				route = "unmatched"
+			}
+			status := strconv.Itoa(sw.status)
+			requestsTotal.WithLabelValues(r.Method, route, status).Inc()
+			if sw.status >= http.StatusInternalServerError {
+				requestErrors.WithLabelValues(r.Method, route, status).Inc()
+			}
+			requestDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+		})
+	}
 }
 
 func Logging(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, ok := skipLogging[r.URL.Path]; ok {
+			if _, ok := skipObservability[r.URL.Path]; ok {
 				next.ServeHTTP(w, r)
 				return
 			}
