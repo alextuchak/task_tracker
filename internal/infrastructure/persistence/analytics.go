@@ -15,7 +15,6 @@ type AnalyticsRepo struct {
 	db *sql.DB
 }
 
-
 func (r *AnalyticsRepo) TeamStats(ctx context.Context, afterID int64, limit int) ([]domain.TeamStats, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT t.id,
@@ -52,7 +51,6 @@ func (r *AnalyticsRepo) TeamStats(ctx context.Context, afterID int64, limit int)
 	}
 	return stats, rows.Err()
 }
-
 
 func (r *AnalyticsRepo) TopCreators(ctx context.Context, afterID int64, limit int) ([]domain.TeamTopCreator, error) {
 	rows, err := r.db.QueryContext(ctx, `
