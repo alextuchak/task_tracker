@@ -53,7 +53,6 @@ func (r *UserRepo) ByID(ctx context.Context, id int64) (domain.User, error) {
 	return u, nil
 }
 
-// GrantAdmin идемпотентен: повторный вызов для админа — no-op.
 func (r *UserRepo) GrantAdmin(ctx context.Context, email string) error {
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE users SET role = ? WHERE email = ?`, domain.RoleAdmin, email)

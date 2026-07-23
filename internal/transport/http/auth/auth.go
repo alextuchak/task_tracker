@@ -20,14 +20,14 @@ func Routes(svc *service.Auth) chi.Router {
 
 // registerHandler godoc
 //
-//	@Summary	Регистрация пользователя
+//	@Summary	Register a new user
 //	@Tags		auth
 //	@Accept		json
 //	@Produce	json
-//	@Param		request	body		registerRequest	true	"данные регистрации"
+//	@Param		request	body		registerRequest	true	"registration data"
 //	@Success	201		{object}	userResponse
-//	@Failure	400		{object}	httpkit.ErrorResponse	"невалидные данные"
-//	@Failure	409		{object}	httpkit.ErrorResponse	"email занят"
+//	@Failure	400		{object}	httpkit.ErrorResponse	"invalid data"
+//	@Failure	409		{object}	httpkit.ErrorResponse	"email already taken"
 //	@Router		/register [post]
 func registerHandler(svc *service.Auth) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -55,14 +55,14 @@ func registerHandler(svc *service.Auth) http.HandlerFunc {
 
 // loginHandler godoc
 //
-//	@Summary	Аутентификация, выдаёт JWT
+//	@Summary	Authenticate and issue a JWT
 //	@Tags		auth
 //	@Accept		json
 //	@Produce	json
-//	@Param		request	body		loginRequest	true	"email и пароль"
+//	@Param		request	body		loginRequest	true	"email and password"
 //	@Success	200		{object}	loginResponse
-//	@Failure	400		{object}	httpkit.ErrorResponse	"невалидный json"
-//	@Failure	401		{object}	httpkit.ErrorResponse	"неверные креды"
+//	@Failure	400		{object}	httpkit.ErrorResponse	"invalid json"
+//	@Failure	401		{object}	httpkit.ErrorResponse	"invalid credentials"
 //	@Router		/login [post]
 func loginHandler(svc *service.Auth) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

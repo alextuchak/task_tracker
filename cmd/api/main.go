@@ -15,13 +15,13 @@ import (
 
 // @title           Task Tracker API
 // @version         1.0
-// @description     Сервис управления задачами с командной работой и историей изменений.
+// @description     Task management service with teams and change history.
 // @BasePath        /api/v1
 
 // @securityDefinitions.apikey BearerAuth
 // @in   header
 // @name Authorization
-// @description JWT в формате: Bearer {token}
+// @description JWT as: Bearer {token}
 
 func main() {
 	cfg, err := internal.NewConfig()

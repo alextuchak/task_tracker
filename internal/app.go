@@ -47,7 +47,8 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	teamRepo := persistence.NewTeamRepo(db)
 	authz := service.NewAuthorizer(userRepo, teamRepo)
 	teamsService := service.NewTeams(teamRepo, userRepo, email.NewClient(cfg.Email), authz, log)
-	tasksService := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, authz)
+	tasksCache := cache.NewTasks(rdb, cfg.Redis.TasksTTL, log)
+	tasksService := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
 	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
 
 	srv := &http.Server{

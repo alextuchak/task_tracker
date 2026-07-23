@@ -23,15 +23,15 @@ func Routes(svc *service.Teams) chi.Router {
 
 // createHandler godoc
 //
-//	@Summary	Создать команду, создатель становится owner
+//	@Summary	Create a team, creator becomes owner
 //	@Tags		teams
 //	@Accept		json
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Param		request	body		createTeamRequest	true	"название"
+//	@Param		request	body		createTeamRequest	true	"team name"
 //	@Success	201		{object}	teamResponse
-//	@Failure	400		{object}	httpkit.ErrorResponse	"невалидные данные"
-//	@Failure	401		{object}	httpkit.ErrorResponse	"нет токена"
+//	@Failure	400		{object}	httpkit.ErrorResponse	"invalid data"
+//	@Failure	401		{object}	httpkit.ErrorResponse	"missing token"
 //	@Router		/teams [post]
 func createHandler(svc *service.Teams) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -61,12 +61,12 @@ func createHandler(svc *service.Teams) http.HandlerFunc {
 
 // listHandler godoc
 //
-//	@Summary	Команды, в которых состоит текущий пользователь
+//	@Summary	Teams the current user belongs to
 //	@Tags		teams
 //	@Produce	json
 //	@Security	BearerAuth
 //	@Success	200	{array}		teamResponse
-//	@Failure	401	{object}	httpkit.ErrorResponse	"нет токена"
+//	@Failure	401	{object}	httpkit.ErrorResponse	"missing token"
 //	@Router		/teams [get]
 func listHandler(svc *service.Teams) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -90,18 +90,18 @@ func listHandler(svc *service.Teams) http.HandlerFunc {
 
 // inviteHandler godoc
 //
-//	@Summary	Пригласить пользователя в команду (owner/admin команды или глобальный admin)
+//	@Summary	Invite a user to a team (team owner/admin or global admin)
 //	@Tags		teams
 //	@Accept		json
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Param		id		path	int				true	"id команды"
-//	@Param		request	body	inviteRequest	true	"email приглашаемого"
+//	@Param		id		path	int				true	"team id"
+//	@Param		request	body	inviteRequest	true	"invitee email"
 //	@Success	204
-//	@Failure	400	{object}	httpkit.ErrorResponse	"невалидные данные"
-//	@Failure	403	{object}	httpkit.ErrorResponse	"нет прав"
-//	@Failure	404	{object}	httpkit.ErrorResponse	"команда или пользователь не найдены"
-//	@Failure	409	{object}	httpkit.ErrorResponse	"уже в команде"
+//	@Failure	400	{object}	httpkit.ErrorResponse	"invalid data"
+//	@Failure	403	{object}	httpkit.ErrorResponse	"forbidden"
+//	@Failure	404	{object}	httpkit.ErrorResponse	"team or user not found"
+//	@Failure	409	{object}	httpkit.ErrorResponse	"already a member"
 //	@Router		/teams/{id}/invite [post]
 func inviteHandler(svc *service.Teams) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
