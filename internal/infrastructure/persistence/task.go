@@ -64,8 +64,18 @@ func (r *TaskRepo) ByID(ctx context.Context, id int64) (domain.Task, error) {
 		`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id))
 }
 
+// FORCE INDEX: on cursor+LIMIT queries the MySQL optimizer falls back to a
+// PRIMARY scan (~40k rows per page instead of 20), verified with EXPLAIN ANALYZE on 3M rows
 func (r *TaskRepo) List(ctx context.Context, f domain.TaskFilter) ([]domain.Task, error) {
-	query := `SELECT ` + taskColumns + ` FROM tasks WHERE team_id = ?`
+	hint := ""
+	switch {
+	case f.AssigneeID != nil:
+	case f.Status != nil:
+		hint = ` FORCE INDEX (idx_tasks_team_status_id)`
+	default:
+		hint = ` FORCE INDEX (idx_tasks_team_id)`
+	}
+	query := `SELECT ` + taskColumns + ` FROM tasks` + hint + ` WHERE team_id = ?`
 	args := []any{f.TeamID}
 	if f.Status != nil {
 		query += ` AND status = ?`
