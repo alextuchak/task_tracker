@@ -29,14 +29,25 @@ const docTemplate = `{
                     "analytics"
                 ],
                 "summary": "Tasks whose assignee is not a team member — integrity check (admin only)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (1..100, default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "last seen task id from next_cursor; omit for the first page",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_transport_http_analytics.orphanAssigneeResponse"
-                            }
+                            "$ref": "#/definitions/internal_transport_http_analytics.orphanAssigneeListResponse"
                         }
                     },
                     "403": {
@@ -62,14 +73,25 @@ const docTemplate = `{
                     "analytics"
                 ],
                 "summary": "Team stats: members and tasks done in the last 7 days (admin only)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "page size (1..100, default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "last seen team id from next_cursor; omit for the first page",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_transport_http_analytics.teamStatsResponse"
-                            }
+                            "$ref": "#/definitions/internal_transport_http_analytics.teamStatsListResponse"
                         }
                     },
                     "403": {
@@ -95,14 +117,25 @@ const docTemplate = `{
                     "analytics"
                 ],
                 "summary": "Top-3 task creators per team for the last month (admin only)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "teams per page (1..100, default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "last seen team id from next_cursor; omit for the first page",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_transport_http_analytics.topCreatorResponse"
-                            }
+                            "$ref": "#/definitions/internal_transport_http_analytics.topCreatorListResponse"
                         }
                     },
                     "403": {
@@ -605,6 +638,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "internal_transport_http_analytics.orphanAssigneeListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_analytics.orphanAssigneeResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_transport_http_analytics.orphanAssigneeResponse": {
             "type": "object",
             "properties": {
@@ -622,6 +669,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_analytics.teamStatsListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_analytics.teamStatsResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_transport_http_analytics.teamStatsResponse": {
             "type": "object",
             "properties": {
@@ -636,6 +697,20 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_analytics.topCreatorListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_analytics.topCreatorResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "integer"
                 }
             }
         },

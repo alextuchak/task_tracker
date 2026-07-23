@@ -53,15 +53,7 @@ func TestAnalyticsTeamStats(t *testing.T) {
 	createTask(t, owner, teamID, "still-todo")
 
 	admin := makeAdmin(t, "an-ts-admin@an.io")
-	statsResp := doJSON(t, http.MethodGet, "/api/v1/analytics/teams", admin, "")
-	require.Equal(t, http.StatusOK, statsResp.StatusCode)
-	var stats []struct {
-		Name          string `json:"name"`
-		ID            int64  `json:"id"`
-		Members       int64  `json:"members"`
-		DoneLast7Days int64  `json:"done_last_7d"`
-	}
-	decodeJSON(t, readBody(t, statsResp), &stats)
+	stats := fetchTeamStats(t, admin)
 
 	var found bool
 	for _, s := range stats {
@@ -96,15 +88,7 @@ func TestAnalyticsTopCreators(t *testing.T) {
 	createTask(t, u3, teamID, "u3-0")
 
 	admin := makeAdmin(t, "an-tc-admin@an.io")
-	resp := doJSON(t, http.MethodGet, "/api/v1/analytics/top-creators", admin, "")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var creators []struct {
-		UserName     string `json:"user_name"`
-		TeamID       int64  `json:"team_id"`
-		TasksCreated int64  `json:"tasks_created"`
-		Rank         int64  `json:"rank"`
-	}
-	decodeJSON(t, readBody(t, resp), &creators)
+	creators := fetchTopCreators(t, admin)
 
 	var team []struct {
 		UserName     string
@@ -153,17 +137,110 @@ func TestAnalyticsOrphanAssignees(t *testing.T) {
 	assert.Contains(t, orphansAfter, task.ID)
 }
 
+type teamStatDTO struct {
+	Name          string `json:"name"`
+	ID            int64  `json:"id"`
+	Members       int64  `json:"members"`
+	DoneLast7Days int64  `json:"done_last_7d"`
+}
+
+func fetchTeamStats(t *testing.T, bearer string) []teamStatDTO {
+	t.Helper()
+	all := make([]teamStatDTO, 0)
+	cursor := ""
+	for {
+		resp := doJSON(t, http.MethodGet, "/api/v1/analytics/teams?limit=100"+cursor, bearer, "")
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var page struct {
+			NextCursor *int64        `json:"next_cursor"`
+			Items      []teamStatDTO `json:"items"`
+		}
+		decodeJSON(t, readBody(t, resp), &page)
+		all = append(all, page.Items...)
+		if page.NextCursor == nil {
+			return all
+		}
+		cursor = fmt.Sprintf("&cursor=%d", *page.NextCursor)
+	}
+}
+
+type topCreatorDTO struct {
+	UserName     string `json:"user_name"`
+	TeamID       int64  `json:"team_id"`
+	TasksCreated int64  `json:"tasks_created"`
+	Rank         int64  `json:"rank"`
+}
+
+func fetchTopCreators(t *testing.T, bearer string) []topCreatorDTO {
+	t.Helper()
+	all := make([]topCreatorDTO, 0)
+	cursor := ""
+	for {
+		resp := doJSON(t, http.MethodGet, "/api/v1/analytics/top-creators?limit=100"+cursor, bearer, "")
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var page struct {
+			NextCursor *int64          `json:"next_cursor"`
+			Items      []topCreatorDTO `json:"items"`
+		}
+		decodeJSON(t, readBody(t, resp), &page)
+		all = append(all, page.Items...)
+		if page.NextCursor == nil {
+			return all
+		}
+		cursor = fmt.Sprintf("&cursor=%d", *page.NextCursor)
+	}
+}
+
 func fetchOrphans(t *testing.T, bearer string) []int64 {
 	t.Helper()
-	resp := doJSON(t, http.MethodGet, "/api/v1/analytics/orphan-assignees", bearer, "")
+	ids := make([]int64, 0)
+	cursor := ""
+	for {
+		resp := doJSON(t, http.MethodGet, "/api/v1/analytics/orphan-assignees?limit=100"+cursor, bearer, "")
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var page struct {
+			NextCursor *int64 `json:"next_cursor"`
+			Items      []struct {
+				TaskID int64 `json:"task_id"`
+			} `json:"items"`
+		}
+		decodeJSON(t, readBody(t, resp), &page)
+		for _, o := range page.Items {
+			ids = append(ids, o.TaskID)
+		}
+		if page.NextCursor == nil {
+			return ids
+		}
+		cursor = fmt.Sprintf("&cursor=%d", *page.NextCursor)
+	}
+}
+
+func TestAnalyticsTeamStatsPagination(t *testing.T) {
+	admin := makeAdmin(t, "an-pg-admin@an.io")
+	owner := registerAndLogin(t, "an-pg-owner@an.io")
+	for i := 0; i < 3; i++ {
+		createTeam(t, owner, fmt.Sprintf("an-pg-team-%d", i))
+	}
+
+	resp := doJSON(t, http.MethodGet, "/api/v1/analytics/teams?limit=2", admin, "")
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var orphans []struct {
-		TaskID int64 `json:"task_id"`
+	var page1 struct {
+		NextCursor *int64        `json:"next_cursor"`
+		Items      []teamStatDTO `json:"items"`
 	}
-	decodeJSON(t, readBody(t, resp), &orphans)
-	ids := make([]int64, 0, len(orphans))
-	for _, o := range orphans {
-		ids = append(ids, o.TaskID)
+	decodeJSON(t, readBody(t, resp), &page1)
+	require.Len(t, page1.Items, 2)
+	require.NotNil(t, page1.NextCursor)
+	assert.Equal(t, page1.Items[1].ID, *page1.NextCursor)
+
+	resp = doJSON(t, http.MethodGet,
+		fmt.Sprintf("/api/v1/analytics/teams?limit=2&cursor=%d", *page1.NextCursor), admin, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var page2 struct {
+		NextCursor *int64        `json:"next_cursor"`
+		Items      []teamStatDTO `json:"items"`
 	}
-	return ids
+	decodeJSON(t, readBody(t, resp), &page2)
+	require.NotEmpty(t, page2.Items)
+	assert.Greater(t, page2.Items[0].ID, page1.Items[1].ID)
 }

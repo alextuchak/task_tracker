@@ -8,6 +8,11 @@ type teamStatsResponse struct {
 	DoneLast7Days int64  `json:"done_last_7d"`
 }
 
+type teamStatsListResponse struct {
+	NextCursor *int64              `json:"next_cursor"`
+	Items      []teamStatsResponse `json:"items"`
+}
+
 type topCreatorResponse struct {
 	TeamName     string `json:"team_name"`
 	UserName     string `json:"user_name"`
@@ -17,9 +22,19 @@ type topCreatorResponse struct {
 	Rank         int64  `json:"rank"`
 }
 
+type topCreatorListResponse struct {
+	NextCursor *int64               `json:"next_cursor"`
+	Items      []topCreatorResponse `json:"items"`
+}
+
 type orphanAssigneeResponse struct {
 	Title      string `json:"title"`
 	TaskID     int64  `json:"task_id"`
 	TeamID     int64  `json:"team_id"`
 	AssigneeID int64  `json:"assignee_id"`
+}
+
+type orphanAssigneeListResponse struct {
+	NextCursor *int64                   `json:"next_cursor"`
+	Items      []orphanAssigneeResponse `json:"items"`
 }

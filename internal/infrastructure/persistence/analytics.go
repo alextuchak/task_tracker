@@ -15,19 +15,28 @@ type AnalyticsRepo struct {
 	db *sql.DB
 }
 
-func (r *AnalyticsRepo) TeamStats(ctx context.Context) ([]domain.TeamStats, error) {
+
+func (r *AnalyticsRepo) TeamStats(ctx context.Context, afterID int64, limit int) ([]domain.TeamStats, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT t.id,
 		       t.name,
-		       COUNT(DISTINCT tm.user_id) AS members,
-		       COUNT(DISTINCT CASE
-		           WHEN ta.status = 'done' AND ta.completed_at >= NOW() - INTERVAL 7 DAY
-		           THEN ta.id END) AS done_last_7d
+		       COALESCE(m.members, 0)      AS members,
+		       COALESCE(d.done_last_7d, 0) AS done_last_7d
 		FROM teams t
-		JOIN team_members tm ON tm.team_id = t.id
-		LEFT JOIN tasks ta ON ta.team_id = t.id
-		GROUP BY t.id, t.name
-		ORDER BY t.id`)
+		LEFT JOIN (
+		    SELECT team_id, COUNT(*) AS members
+		    FROM team_members
+		    GROUP BY team_id
+		) m ON m.team_id = t.id
+		LEFT JOIN (
+		    SELECT team_id, COUNT(*) AS done_last_7d
+		    FROM tasks
+		    WHERE status = 'done' AND completed_at >= NOW() - INTERVAL 7 DAY
+		    GROUP BY team_id
+		) d ON d.team_id = t.id
+		WHERE t.id > ?
+		ORDER BY t.id
+		LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("team stats: %w", err)
 	}
@@ -44,11 +53,20 @@ func (r *AnalyticsRepo) TeamStats(ctx context.Context) ([]domain.TeamStats, erro
 	return stats, rows.Err()
 }
 
-func (r *AnalyticsRepo) TopCreators(ctx context.Context) ([]domain.TeamTopCreator, error) {
+
+func (r *AnalyticsRepo) TopCreators(ctx context.Context, afterID int64, limit int) ([]domain.TeamTopCreator, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		WITH created AS (
+		WITH page_teams AS (
+		    SELECT DISTINCT ta.team_id
+		    FROM tasks ta
+		    WHERE ta.created_at >= NOW() - INTERVAL 1 MONTH AND ta.team_id > ?
+		    ORDER BY ta.team_id
+		    LIMIT ?
+		),
+		created AS (
 		    SELECT ta.team_id, ta.created_by, COUNT(*) AS cnt
 		    FROM tasks ta
+		    JOIN page_teams p ON p.team_id = ta.team_id
 		    WHERE ta.created_at >= NOW() - INTERVAL 1 MONTH
 		    GROUP BY ta.team_id, ta.created_by
 		),
@@ -65,7 +83,7 @@ func (r *AnalyticsRepo) TopCreators(ctx context.Context) ([]domain.TeamTopCreato
 		JOIN teams t ON t.id = r.team_id
 		JOIN users u ON u.id = r.created_by
 		WHERE r.rn <= 3
-		ORDER BY r.team_id, r.rn`)
+		ORDER BY r.team_id, r.rn`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("top creators: %w", err)
 	}
@@ -83,7 +101,7 @@ func (r *AnalyticsRepo) TopCreators(ctx context.Context) ([]domain.TeamTopCreato
 	return creators, rows.Err()
 }
 
-func (r *AnalyticsRepo) OrphanAssignees(ctx context.Context) ([]domain.OrphanAssignee, error) {
+func (r *AnalyticsRepo) OrphanAssignees(ctx context.Context, afterID int64, limit int) ([]domain.OrphanAssignee, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ta.id, ta.team_id, ta.assignee_id, ta.title
 		FROM tasks ta
@@ -91,7 +109,9 @@ func (r *AnalyticsRepo) OrphanAssignees(ctx context.Context) ([]domain.OrphanAss
 		       ON tm.team_id = ta.team_id AND tm.user_id = ta.assignee_id
 		WHERE ta.assignee_id IS NOT NULL
 		  AND tm.user_id IS NULL
-		ORDER BY ta.id`)
+		  AND ta.id > ?
+		ORDER BY ta.id
+		LIMIT ?`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("orphan assignees: %w", err)
 	}
