@@ -1,5 +1,8 @@
 version: '3'
 
+env:
+  GOTOOLCHAIN: auto
+
 vars:
   GOOSE_DSN: '"tasks:tasks@tcp(localhost:3306)/tasks?parseTime=true"'
   DOCKER_SOCK:

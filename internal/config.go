@@ -11,6 +11,7 @@ import (
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
 	"task_tracker/internal/infrastructure/persistence"
+	"task_tracker/internal/infrastructure/ratelimit"
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -29,17 +30,19 @@ func NewConfig() (*Config, error) {
 }
 
 type Config struct {
-	AppName    string                  `env-default:"task-tracker"`
-	AppVersion string                  `env:"APP_VERSION" env-default:"dev"`
-	Env        string                  `env:"ENV" env-default:"local"`
-	Redis      cache.Config            `yaml:"redis"`
-	Auth       identity.Config         `yaml:"auth"`
-	Email      email.Config            `yaml:"email"`
-	HTTP       HTTPConfig              `yaml:"http"`
-	MySQL      persistence.Config      `yaml:"mysql"`
-	Shutdown   lifecycle.CloserConfig  `yaml:"shutdown"`
-	Startup    lifecycle.StarterConfig `yaml:"startup"`
-	Health     health.Config           `yaml:"health"`
+	AppName         string                  `env-default:"task-tracker"`
+	AppVersion      string                  `env:"APP_VERSION" env-default:"dev"`
+	Env             string                  `env:"ENV" env-default:"local"`
+	Redis           cache.Config            `yaml:"redis"`
+	Auth            identity.Config         `yaml:"auth"`
+	Email           email.Config            `yaml:"email"`
+	HTTP            HTTPConfig              `yaml:"http"`
+	MySQL           persistence.Config      `yaml:"mysql"`
+	Shutdown        lifecycle.CloserConfig  `yaml:"shutdown"`
+	Startup         lifecycle.StarterConfig `yaml:"startup"`
+	Health          health.Config           `yaml:"health"`
+	RateLimit       ratelimit.Config        `yaml:"rate_limit"`
+	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
 }
 
 type HTTPConfig struct {
@@ -83,6 +86,12 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := config.ValidateField("email", &c.Email); err != nil {
+		return err
+	}
+	if err := config.ValidateField("rate_limit", &c.RateLimit); err != nil {
+		return err
+	}
+	if err := config.ValidateField("rate_limit_public", &c.RateLimitPublic); err != nil {
 		return err
 	}
 	return nil

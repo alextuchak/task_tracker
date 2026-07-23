@@ -25,6 +25,14 @@ shutdown:
 health:
   check_timeout: 2s
 
+rate_limit:
+  requests: 100
+  window: 1m
+
+rate_limit_public:
+  requests: 20
+  window: 1m
+
 auth:
   secret: "local-dev-secret-change-me-please-32b"
   ttl: 24h

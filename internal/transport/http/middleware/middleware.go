@@ -3,7 +3,9 @@
 package middleware
 
 import (
+	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,6 +38,47 @@ func Auth(parser TokenParser) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(identity.WithPrincipal(r.Context(), principal)))
 		})
 	}
+}
+
+type RateLimiter interface {
+	Allow(ctx context.Context, key string) (allowed bool, retryAfter time.Duration)
+}
+
+func RateLimit(limiter RateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			principal, ok := identity.FromContext(r.Context())
+			if !ok {
+				httpkit.WriteError(w, http.StatusUnauthorized, "missing principal")
+				return
+			}
+			rejectOrServe(w, r, next, limiter, "user:"+strconv.FormatInt(principal.UserID, 10))
+		})
+	}
+}
+
+func RateLimitByIP(limiter RateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			host, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				host = r.RemoteAddr
+			}
+			rejectOrServe(w, r, next, limiter, "ip:"+host)
+		})
+	}
+}
+
+func rejectOrServe(w http.ResponseWriter, r *http.Request, next http.Handler,
+	limiter RateLimiter, key string,
+) {
+	allowed, retryAfter := limiter.Allow(r.Context(), key)
+	if !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())+1))
+		httpkit.WriteError(w, http.StatusTooManyRequests, "rate limit exceeded")
+		return
+	}
+	next.ServeHTTP(w, r)
 }
 
 var skipObservability = map[string]struct{}{
