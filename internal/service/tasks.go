@@ -15,13 +15,20 @@ type TaskRepository interface {
 	History(ctx context.Context, taskID int64) ([]domain.TaskChange, error)
 }
 
-func NewTasks(tasks TaskRepository, teams TeamRepository, authz *Authorizer) *Tasks {
-	return &Tasks{tasks: tasks, teams: teams, authz: authz}
+type TaskListCache interface {
+	GetList(ctx context.Context, f domain.TaskFilter) ([]domain.Task, bool)
+	SetList(ctx context.Context, f domain.TaskFilter, tasks []domain.Task)
+	InvalidateTeam(ctx context.Context, teamID int64)
+}
+
+func NewTasks(tasks TaskRepository, teams TeamRepository, cache TaskListCache, authz *Authorizer) *Tasks {
+	return &Tasks{tasks: tasks, teams: teams, cache: cache, authz: authz}
 }
 
 type Tasks struct {
 	tasks TaskRepository
 	teams TeamRepository
+	cache TaskListCache
 	authz *Authorizer
 }
 
@@ -58,6 +65,7 @@ func (s *Tasks) Create(ctx context.Context, actorID, teamID int64, in TaskInput)
 	if err != nil {
 		return domain.Task{}, fmt.Errorf("load created task: %w", err)
 	}
+	s.cache.InvalidateTeam(ctx, teamID)
 	return created, nil
 }
 
@@ -65,10 +73,14 @@ func (s *Tasks) List(ctx context.Context, actorID int64, f domain.TaskFilter) ([
 	if err := s.authz.RequireTeamRole(ctx, actorID, f.TeamID, domain.TeamRoleMember); err != nil {
 		return nil, err
 	}
+	if cached, ok := s.cache.GetList(ctx, f); ok {
+		return cached, nil
+	}
 	tasks, err := s.tasks.List(ctx, f)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
 	}
+	s.cache.SetList(ctx, f, tasks)
 	return tasks, nil
 }
 
@@ -94,6 +106,7 @@ func (s *Tasks) Update(ctx context.Context, actorID, taskID int64, in TaskInput)
 	if err != nil {
 		return domain.Task{}, fmt.Errorf("update task: %w", err)
 	}
+	s.cache.InvalidateTeam(ctx, updated.TeamID)
 	return updated, nil
 }
 

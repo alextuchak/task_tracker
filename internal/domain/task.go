@@ -23,7 +23,6 @@ type Task struct {
 	CreatedBy   int64
 }
 
-// ChangeFieldCreated — событие рождения задачи в истории.
 const ChangeFieldCreated = "created"
 
 type TaskChange struct {

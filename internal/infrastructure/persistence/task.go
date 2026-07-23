@@ -102,8 +102,7 @@ func (r *TaskRepo) List(ctx context.Context, f domain.TaskFilter) ([]domain.Task
 	return tasks, nil
 }
 
-// Update пишет diff в task_history в той же транзакции, что и UPDATE:
-// аудит не может разойтись с данными.
+// history rows go in the same tx as the update, so the audit cannot drift
 func (r *TaskRepo) Update(ctx context.Context, actorID int64, t domain.Task) (domain.Task, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

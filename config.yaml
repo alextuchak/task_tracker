@@ -16,6 +16,7 @@ mysql:
 redis:
   addr: "redis:6379"
   db: 0
+  tasks_ttl: 5m
 
 shutdown:
   total: 20s

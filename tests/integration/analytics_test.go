@@ -146,7 +146,6 @@ func TestAnalyticsOrphanAssignees(t *testing.T) {
 	orphansBefore := fetchOrphans(t, admin)
 	assert.NotContains(t, orphansBefore, task.ID, "пока member в команде — не сирота")
 
-	// рассинхрон руками: приложение такого не создаёт, запрос должен ловить
 	_, err := testDB.Exec(`DELETE FROM team_members WHERE team_id = ? AND user_id = ?`, teamID, memberID)
 	require.NoError(t, err)
 

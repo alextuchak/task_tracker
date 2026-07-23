@@ -20,7 +20,6 @@ type TeamRepo struct {
 	db *sql.DB
 }
 
-// Create — транзакция: команда и её создатель-owner появляются атомарно.
 func (r *TeamRepo) Create(ctx context.Context, name string, creatorID int64) (int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

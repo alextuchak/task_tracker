@@ -108,7 +108,8 @@ func run(m *testing.M) (int, error) {
 	teamRepo := persistence.NewTeamRepo(db)
 	authz := service.NewAuthorizer(userRepo, teamRepo)
 	teamsSvc := service.NewTeams(teamRepo, userRepo, emailClient, authz, log)
-	tasksSvc := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, authz)
+	tasksCache := cache.NewTasks(rdb, time.Minute*5, log)
+	tasksSvc := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
 	analyticsSvc := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
 	testDB = db
 

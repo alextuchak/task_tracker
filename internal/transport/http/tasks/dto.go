@@ -53,18 +53,15 @@ type taskResponse struct {
 }
 
 type taskListResponse struct {
-	// NextCursor передаётся в следующий запрос параметром cursor;
-	// null — страниц больше нет
 	NextCursor *int64         `json:"next_cursor"`
 	Items      []taskResponse `json:"items"`
 }
 
 type changeResponse struct {
-	ChangedAt time.Time `json:"changed_at"`
-	// ChangeGroupID один на все поля, изменённые одним запросом
-	ChangeGroupID string `json:"change_group_id"`
-	Field         string `json:"field"`
-	OldValue      string `json:"old_value"`
-	NewValue      string `json:"new_value"`
-	ChangedBy     int64  `json:"changed_by"`
+	ChangedAt     time.Time `json:"changed_at"`
+	ChangeGroupID string    `json:"change_group_id"`
+	Field         string    `json:"field"`
+	OldValue      string    `json:"old_value"`
+	NewValue      string    `json:"new_value"`
+	ChangedBy     int64     `json:"changed_by"`
 }
