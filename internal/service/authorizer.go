@@ -16,6 +16,17 @@ type Authorizer struct {
 	teams TeamRepository
 }
 
+func (a *Authorizer) RequireAdmin(ctx context.Context, actorID int64) error {
+	actor, err := a.users.ByID(ctx, actorID)
+	if err != nil {
+		return fmt.Errorf("find actor: %w", err)
+	}
+	if actor.Role != domain.RoleAdmin {
+		return domain.ErrForbidden
+	}
+	return nil
+}
+
 func (a *Authorizer) RequireTeamRole(ctx context.Context, actorID, teamID int64, min domain.TeamRole) error {
 	actor, err := a.users.ByID(ctx, actorID)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/service"
+	"task_tracker/internal/transport/http/analytics"
 	"task_tracker/internal/transport/http/auth"
 	"task_tracker/internal/transport/http/middleware"
 	"task_tracker/internal/transport/http/tasks"
@@ -18,7 +19,8 @@ import (
 )
 
 func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
-	teamsSvc *service.Teams, tasksSvc *service.Tasks, parser middleware.TokenParser,
+	teamsSvc *service.Teams, tasksSvc *service.Tasks, analyticsSvc *service.Analytics,
+	parser middleware.TokenParser,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer)
@@ -31,12 +33,12 @@ func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Mount("/", auth.Routes(authSvc))
 
-		// authenticated routes mount here (teams, tasks)
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(parser))
 			r.Get("/me", auth.Me(authSvc))
 			r.Mount("/teams", teams.Routes(teamsSvc))
 			r.Mount("/tasks", tasks.Routes(tasksSvc))
+			r.Mount("/analytics", analytics.Routes(analyticsSvc))
 		})
 	})
 	return r

@@ -15,6 +15,105 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/analytics/orphan-assignees": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analytics"
+                ],
+                "summary": "Задачи, где assignee не член команды — валидация целостности (только admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_transport_http_analytics.orphanAssigneeResponse"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "не admin",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/analytics/teams": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analytics"
+                ],
+                "summary": "Статистика команд: участники и done-задачи за 7 дней (только admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_transport_http_analytics.teamStatsResponse"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "не admin",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/analytics/top-creators": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "analytics"
+                ],
+                "summary": "Топ-3 создателей задач в каждой команде за месяц (только admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_transport_http_analytics.topCreatorResponse"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "не admin",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "post": {
                 "consumes": [
@@ -506,6 +605,63 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "internal_transport_http_analytics.orphanAssigneeResponse": {
+            "type": "object",
+            "properties": {
+                "assignee_id": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_analytics.teamStatsResponse": {
+            "type": "object",
+            "properties": {
+                "done_last_7d": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_analytics.topCreatorResponse": {
+            "type": "object",
+            "properties": {
+                "rank": {
+                    "type": "integer"
+                },
+                "tasks_created": {
+                    "type": "integer"
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "team_name": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "user_name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_transport_http_auth.loginRequest": {
             "type": "object",
             "properties": {

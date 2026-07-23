@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -32,6 +33,7 @@ var (
 	baseURL   string
 	authSvc   *service.Auth
 	emailMock *emailServiceMock
+	testDB    *sql.DB
 )
 
 func TestMain(m *testing.M) {
@@ -107,11 +109,13 @@ func run(m *testing.M) (int, error) {
 	authz := service.NewAuthorizer(userRepo, teamRepo)
 	teamsSvc := service.NewTeams(teamRepo, userRepo, emailClient, authz, log)
 	tasksSvc := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, authz)
+	analyticsSvc := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
+	testDB = db
 
 	h := health.New(health.Config{CheckTimeout: time.Second})
 	h.SetReady()
 
-	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, idp))
+	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, analyticsSvc, idp))
 	defer srv.Close()
 	baseURL = srv.URL
 
