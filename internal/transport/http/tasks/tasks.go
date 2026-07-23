@@ -29,15 +29,15 @@ func Routes(svc *service.Tasks) chi.Router {
 
 // createHandler godoc
 //
-//	@Summary	Создать задачу (только член команды)
+//	@Summary	Create a task (team members only)
 //	@Tags		tasks
 //	@Accept		json
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Param		request	body		createTaskRequest	true	"задача"
+//	@Param		request	body		createTaskRequest	true	"task data"
 //	@Success	201		{object}	taskResponse
-//	@Failure	400		{object}	httpkit.ErrorResponse	"невалидные данные или assignee не член команды"
-//	@Failure	404		{object}	httpkit.ErrorResponse	"команда не найдена"
+//	@Failure	400		{object}	httpkit.ErrorResponse	"invalid data or assignee is not a team member"
+//	@Failure	404		{object}	httpkit.ErrorResponse	"team not found"
 //	@Router		/tasks [post]
 func createHandler(svc *service.Tasks) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -78,18 +78,18 @@ func createHandler(svc *service.Tasks) http.HandlerFunc {
 
 // listHandler godoc
 //
-//	@Summary	Задачи команды с фильтрами и пагинацией
+//	@Summary	Team tasks with filters and pagination
 //	@Tags		tasks
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Param		team_id		query		int		true	"id команды"
+//	@Param		team_id		query		int		true	"team id"
 //	@Param		status		query		string	false	"todo | in_progress | done"
-//	@Param		assignee_id	query		int		false	"id исполнителя"
-//	@Param		limit		query		int		false	"максимум записей (1..100, по умолчанию 20)"
-//	@Param		cursor		query		int		false	"последний увиденный id из next_cursor; без него — первая страница"
+//	@Param		assignee_id	query		int		false	"assignee id"
+//	@Param		limit		query		int		false	"page size (1..100, default 20)"
+//	@Param		cursor		query		int		false	"last seen id from next_cursor; omit for the first page"
 //	@Success	200			{object}	taskListResponse
-//	@Failure	400			{object}	httpkit.ErrorResponse	"невалидные параметры"
-//	@Failure	404			{object}	httpkit.ErrorResponse	"команда не найдена"
+//	@Failure	400			{object}	httpkit.ErrorResponse	"invalid parameters"
+//	@Failure	404			{object}	httpkit.ErrorResponse	"team not found"
 //	@Router		/tasks [get]
 func listHandler(svc *service.Tasks) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -127,17 +127,17 @@ func listHandler(svc *service.Tasks) http.HandlerFunc {
 
 // updateHandler godoc
 //
-//	@Summary	Обновить задачу (член команды), изменения пишутся в историю
+//	@Summary	Update a task (team members only), changes are recorded in history
 //	@Tags		tasks
 //	@Accept		json
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Param		id		path		int					true	"id задачи"
-//	@Param		request	body		updateTaskRequest	true	"новое состояние"
+//	@Param		id		path		int					true	"task id"
+//	@Param		request	body		updateTaskRequest	true	"new task state"
 //	@Success	200		{object}	taskResponse
-//	@Failure	400		{object}	httpkit.ErrorResponse	"невалидные данные или assignee не член команды"
-//	@Failure	403		{object}	httpkit.ErrorResponse	"нет прав"
-//	@Failure	404		{object}	httpkit.ErrorResponse	"задача не найдена"
+//	@Failure	400		{object}	httpkit.ErrorResponse	"invalid data or assignee is not a team member"
+//	@Failure	403		{object}	httpkit.ErrorResponse	"forbidden"
+//	@Failure	404		{object}	httpkit.ErrorResponse	"task not found"
 //	@Router		/tasks/{id} [put]
 func updateHandler(svc *service.Tasks) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -183,13 +183,13 @@ func updateHandler(svc *service.Tasks) http.HandlerFunc {
 
 // historyHandler godoc
 //
-//	@Summary	История изменений задачи
+//	@Summary	Task change history
 //	@Tags		tasks
 //	@Produce	json
 //	@Security	BearerAuth
-//	@Param		id	path		int	true	"id задачи"
+//	@Param		id	path		int	true	"task id"
 //	@Success	200	{array}		changeResponse
-//	@Failure	404	{object}	httpkit.ErrorResponse	"задача не найдена"
+//	@Failure	404	{object}	httpkit.ErrorResponse	"task not found"
 //	@Router		/tasks/{id}/history [get]
 func historyHandler(svc *service.Tasks) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -28,7 +28,7 @@ const docTemplate = `{
                 "tags": [
                     "analytics"
                 ],
-                "summary": "Задачи, где assignee не член команды — валидация целостности (только admin)",
+                "summary": "Tasks whose assignee is not a team member — integrity check (admin only)",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -40,7 +40,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "не admin",
+                        "description": "not an admin",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -61,7 +61,7 @@ const docTemplate = `{
                 "tags": [
                     "analytics"
                 ],
-                "summary": "Статистика команд: участники и done-задачи за 7 дней (только admin)",
+                "summary": "Team stats: members and tasks done in the last 7 days (admin only)",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -73,7 +73,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "не admin",
+                        "description": "not an admin",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -94,7 +94,7 @@ const docTemplate = `{
                 "tags": [
                     "analytics"
                 ],
-                "summary": "Топ-3 создателей задач в каждой команде за месяц (только admin)",
+                "summary": "Top-3 task creators per team for the last month (admin only)",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -106,7 +106,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "не admin",
+                        "description": "not an admin",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -125,10 +125,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Аутентификация, выдаёт JWT",
+                "summary": "Authenticate and issue a JWT",
                 "parameters": [
                     {
-                        "description": "email и пароль",
+                        "description": "email and password",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -145,13 +145,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "невалидный json",
+                        "description": "invalid json",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "401": {
-                        "description": "неверные креды",
+                        "description": "invalid credentials",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -172,7 +172,7 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Текущий пользователь",
+                "summary": "Current user",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -181,7 +181,7 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "нет или невалидный токен",
+                        "description": "missing or invalid token",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -200,10 +200,10 @@ const docTemplate = `{
                 "tags": [
                     "auth"
                 ],
-                "summary": "Регистрация пользователя",
+                "summary": "Register a new user",
                 "parameters": [
                     {
-                        "description": "данные регистрации",
+                        "description": "registration data",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -220,13 +220,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "невалидные данные",
+                        "description": "invalid data",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "409": {
-                        "description": "email занят",
+                        "description": "email already taken",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -247,11 +247,11 @@ const docTemplate = `{
                 "tags": [
                     "tasks"
                 ],
-                "summary": "Задачи команды с фильтрами и пагинацией",
+                "summary": "Team tasks with filters and pagination",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "id команды",
+                        "description": "team id",
                         "name": "team_id",
                         "in": "query",
                         "required": true
@@ -264,19 +264,19 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "id исполнителя",
+                        "description": "assignee id",
                         "name": "assignee_id",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "максимум записей (1..100, по умолчанию 20)",
+                        "description": "page size (1..100, default 20)",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "последний увиденный id из next_cursor; без него — первая страница",
+                        "description": "last seen id from next_cursor; omit for the first page",
                         "name": "cursor",
                         "in": "query"
                     }
@@ -289,13 +289,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "невалидные параметры",
+                        "description": "invalid parameters",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "команда не найдена",
+                        "description": "team not found",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -317,10 +317,10 @@ const docTemplate = `{
                 "tags": [
                     "tasks"
                 ],
-                "summary": "Создать задачу (только член команды)",
+                "summary": "Create a task (team members only)",
                 "parameters": [
                     {
-                        "description": "задача",
+                        "description": "task data",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -337,13 +337,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "невалидные данные или assignee не член команды",
+                        "description": "invalid data or assignee is not a team member",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "команда не найдена",
+                        "description": "team not found",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -367,17 +367,17 @@ const docTemplate = `{
                 "tags": [
                     "tasks"
                 ],
-                "summary": "Обновить задачу (член команды), изменения пишутся в историю",
+                "summary": "Update a task (team members only), changes are recorded in history",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "id задачи",
+                        "description": "task id",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "новое состояние",
+                        "description": "new task state",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -394,19 +394,19 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "невалидные данные или assignee не член команды",
+                        "description": "invalid data or assignee is not a team member",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "403": {
-                        "description": "нет прав",
+                        "description": "forbidden",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "задача не найдена",
+                        "description": "task not found",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -427,11 +427,11 @@ const docTemplate = `{
                 "tags": [
                     "tasks"
                 ],
-                "summary": "История изменений задачи",
+                "summary": "Task change history",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "id задачи",
+                        "description": "task id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -448,7 +448,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "задача не найдена",
+                        "description": "task not found",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -469,7 +469,7 @@ const docTemplate = `{
                 "tags": [
                     "teams"
                 ],
-                "summary": "Команды, в которых состоит текущий пользователь",
+                "summary": "Teams the current user belongs to",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -481,7 +481,7 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "нет токена",
+                        "description": "missing token",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -503,10 +503,10 @@ const docTemplate = `{
                 "tags": [
                     "teams"
                 ],
-                "summary": "Создать команду, создатель становится owner",
+                "summary": "Create a team, creator becomes owner",
                 "parameters": [
                     {
-                        "description": "название",
+                        "description": "team name",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -523,13 +523,13 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "невалидные данные",
+                        "description": "invalid data",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "401": {
-                        "description": "нет токена",
+                        "description": "missing token",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -553,17 +553,17 @@ const docTemplate = `{
                 "tags": [
                     "teams"
                 ],
-                "summary": "Пригласить пользователя в команду (owner/admin команды или глобальный admin)",
+                "summary": "Invite a user to a team (team owner/admin or global admin)",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "id команды",
+                        "description": "team id",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "email приглашаемого",
+                        "description": "invitee email",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -577,25 +577,25 @@ const docTemplate = `{
                         "description": "No Content"
                     },
                     "400": {
-                        "description": "невалидные данные",
+                        "description": "invalid data",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "403": {
-                        "description": "нет прав",
+                        "description": "forbidden",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "команда или пользователь не найдены",
+                        "description": "team or user not found",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
                     },
                     "409": {
-                        "description": "уже в команде",
+                        "description": "already a member",
                         "schema": {
                             "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
                         }
@@ -716,7 +716,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "change_group_id": {
-                    "description": "ChangeGroupID один на все поля, изменённые одним запросом",
                     "type": "string"
                 },
                 "changed_at": {
@@ -766,7 +765,6 @@ const docTemplate = `{
                     }
                 },
                 "next_cursor": {
-                    "description": "NextCursor передаётся в следующий запрос параметром cursor;\nnull — страниц больше нет",
                     "type": "integer"
                 }
             }
@@ -864,7 +862,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "JWT в формате: Bearer {token}",
+            "description": "JWT as: Bearer {token}",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
@@ -879,7 +877,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "Task Tracker API",
-	Description:      "Сервис управления задачами с командной работой и историей изменений.",
+	Description:      "Task management service with teams and change history.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

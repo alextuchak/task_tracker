@@ -21,12 +21,12 @@ func Routes(svc *service.Analytics) chi.Router {
 
 // teamStatsHandler godoc
 //
-//	@Summary	Статистика команд: участники и done-задачи за 7 дней (только admin)
+//	@Summary	Team stats: members and tasks done in the last 7 days (admin only)
 //	@Tags		analytics
 //	@Produce	json
 //	@Security	BearerAuth
 //	@Success	200	{array}		teamStatsResponse
-//	@Failure	403	{object}	httpkit.ErrorResponse	"не admin"
+//	@Failure	403	{object}	httpkit.ErrorResponse	"not an admin"
 //	@Router		/analytics/teams [get]
 func teamStatsHandler(svc *service.Analytics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -55,12 +55,12 @@ func teamStatsHandler(svc *service.Analytics) http.HandlerFunc {
 
 // topCreatorsHandler godoc
 //
-//	@Summary	Топ-3 создателей задач в каждой команде за месяц (только admin)
+//	@Summary	Top-3 task creators per team for the last month (admin only)
 //	@Tags		analytics
 //	@Produce	json
 //	@Security	BearerAuth
 //	@Success	200	{array}		topCreatorResponse
-//	@Failure	403	{object}	httpkit.ErrorResponse	"не admin"
+//	@Failure	403	{object}	httpkit.ErrorResponse	"not an admin"
 //	@Router		/analytics/top-creators [get]
 func topCreatorsHandler(svc *service.Analytics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -90,12 +90,12 @@ func topCreatorsHandler(svc *service.Analytics) http.HandlerFunc {
 
 // orphanAssigneesHandler godoc
 //
-//	@Summary	Задачи, где assignee не член команды — валидация целостности (только admin)
+//	@Summary	Tasks whose assignee is not a team member — integrity check (admin only)
 //	@Tags		analytics
 //	@Produce	json
 //	@Security	BearerAuth
 //	@Success	200	{array}		orphanAssigneeResponse
-//	@Failure	403	{object}	httpkit.ErrorResponse	"не admin"
+//	@Failure	403	{object}	httpkit.ErrorResponse	"not an admin"
 //	@Router		/analytics/orphan-assignees [get]
 func orphanAssigneesHandler(svc *service.Analytics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

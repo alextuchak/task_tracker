@@ -9,12 +9,12 @@ import (
 
 // Me godoc
 //
-//	@Summary	Текущий пользователь
+//	@Summary	Current user
 //	@Tags		auth
 //	@Produce	json
 //	@Security	BearerAuth
 //	@Success	200	{object}	userResponse
-//	@Failure	401	{object}	httpkit.ErrorResponse	"нет или невалидный токен"
+//	@Failure	401	{object}	httpkit.ErrorResponse	"missing or invalid token"
 //	@Router		/me [get]
 func Me(svc *service.Auth) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
