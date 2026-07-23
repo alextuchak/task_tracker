@@ -56,7 +56,7 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
-		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, idp, userLimiter, ipLimiter),
+		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, idp, userLimiter, ipLimiter, cfg.RateLimitPublic.TrustedNets()),
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 		IdleTimeout:  cfg.HTTP.IdleTimeout,

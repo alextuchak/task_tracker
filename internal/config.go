@@ -33,16 +33,16 @@ type Config struct {
 	AppName         string                  `env-default:"task-tracker"`
 	AppVersion      string                  `env:"APP_VERSION" env-default:"dev"`
 	Env             string                  `env:"ENV" env-default:"local"`
-	Redis           cache.Config            `yaml:"redis"`
 	Auth            identity.Config         `yaml:"auth"`
-	Email           email.Config            `yaml:"email"`
+	Redis           cache.Config            `yaml:"redis"`
 	HTTP            HTTPConfig              `yaml:"http"`
+	Email           email.Config            `yaml:"email"`
 	MySQL           persistence.Config      `yaml:"mysql"`
+	RateLimit       ratelimit.Config        `yaml:"rate_limit"`
+	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
 	Shutdown        lifecycle.CloserConfig  `yaml:"shutdown"`
 	Startup         lifecycle.StarterConfig `yaml:"startup"`
 	Health          health.Config           `yaml:"health"`
-	RateLimit       ratelimit.Config        `yaml:"rate_limit"`
-	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
 }
 
 type HTTPConfig struct {

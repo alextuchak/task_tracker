@@ -57,12 +57,23 @@ func RateLimit(limiter RateLimiter) func(http.Handler) http.Handler {
 	}
 }
 
-func RateLimitByIP(limiter RateLimiter) func(http.Handler) http.Handler {
+// RateLimitByIP throttles anonymous endpoints per client IP. Trusted networks
+// (internal infra, load balancers, local load testing) skip the IP limit;
+// the per-user limit still applies to them once authenticated.
+func RateLimitByIP(limiter RateLimiter, trusted []*net.IPNet) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			host, _, err := net.SplitHostPort(r.RemoteAddr)
 			if err != nil {
 				host = r.RemoteAddr
+			}
+			if ip := net.ParseIP(host); ip != nil {
+				for _, n := range trusted {
+					if n.Contains(ip) {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
 			}
 			rejectOrServe(w, r, next, limiter, "ip:"+host)
 		})

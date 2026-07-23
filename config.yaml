@@ -32,6 +32,15 @@ rate_limit:
 rate_limit_public:
   requests: 20
   window: 1m
+  # local demo: private networks and the docker NAT ranges skip the per-IP
+  # limit (in production this would be the LB / internal infra ranges)
+  trusted_cidrs:
+    - "127.0.0.0/8"
+    - "::1/128"
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+    - "198.18.0.0/15"
 
 auth:
   secret: "local-dev-secret-change-me-please-32b"

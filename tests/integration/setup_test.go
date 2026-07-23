@@ -119,7 +119,7 @@ func run(m *testing.M) (int, error) {
 	h := health.New(health.Config{CheckTimeout: time.Second})
 	h.SetReady()
 
-	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, analyticsSvc, idp, userLimiter, ipLimiter))
+	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, analyticsSvc, idp, userLimiter, ipLimiter, nil))
 	defer srv.Close()
 	baseURL = srv.URL
 
