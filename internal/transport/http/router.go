@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
@@ -24,11 +25,13 @@ func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Recoverer)
+	r.Use(middleware.Metrics())
 	r.Use(middleware.Logging(log))
 
 	r.Get("/livez", livezHandler)
 	r.Get("/readyz", readyzHandler(h))
 	r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL("/swagger/doc.json")))
+	r.Handle("/metrics", promhttp.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Mount("/", auth.Routes(authSvc))

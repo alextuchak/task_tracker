@@ -2,7 +2,6 @@ version: '3'
 
 vars:
   GOOSE_DSN: '"tasks:tasks@tcp(localhost:3306)/tasks?parseTime=true"'
-  # endpoint текущего docker context — работает с orbstack/colima/desktop без хардкода
   DOCKER_SOCK:
     sh: sh -c 'echo "${DOCKER_HOST:-$(docker context inspect -f "{{"{{"}}.Endpoints.docker.Host{{"}}"}}" 2>/dev/null)}"'
 
