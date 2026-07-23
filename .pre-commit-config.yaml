@@ -33,6 +33,13 @@ repos:
         files: (go\.(mod|sum)$|\.go$)
         pass_filenames: false
 
+      - id: swagger
+        name: swag init
+        entry: sh -c 'swag init -g cmd/api/main.go -o docs --outputTypes go,json --parseDependency --parseInternal >/dev/null'
+        language: system
+        types: [go]
+        pass_filenames: false
+
       - id: go-test
         name: go test (unit)
         entry: go test -short ./...
