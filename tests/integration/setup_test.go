@@ -110,10 +110,10 @@ func run(m *testing.M) (int, error) {
 	authz := service.NewAuthorizer(userRepo, teamRepo)
 	teamsSvc := service.NewTeams(teamRepo, userRepo, outboxRepo, trManager, authz)
 	tasksCache := cache.NewTasks(rdb, time.Minute*5, log)
-	tasksSvc := service.NewTasks(
-		persistence.NewTaskRepo(db, trmsql.DefaultCtxGetter), teamRepo, tasksCache,
-		manager.Must(trmsql.NewDefaultFactory(db)), authz)
-	analyticsSvc := service.NewAnalytics(persistence.NewAnalyticsRepo(db, trmsql.DefaultCtxGetter), authz)
+	taskRepo := persistence.NewTaskRepo(db, getter)
+	tasksSvc := service.NewTasks(taskRepo, teamRepo, tasksCache, trManager, authz)
+	analyticsSvc := service.NewAnalytics(persistence.NewAnalyticsRepo(db, getter), authz)
+	commentsSvc := service.NewComments(persistence.NewCommentRepo(db, getter), taskRepo, trManager, authz)
 	userLimiter := ratelimit.New(rdb, ratelimit.Config{Requests: 150, Window: time.Minute}, log)
 	ipLimiter := ratelimit.New(rdb, ratelimit.Config{Requests: 100000, Window: time.Minute}, log)
 	testDB = db
@@ -121,7 +121,7 @@ func run(m *testing.M) (int, error) {
 	h := health.New(health.Config{CheckTimeout: time.Second})
 	h.SetReady()
 
-	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, analyticsSvc, idp, userLimiter, ipLimiter, nil))
+	srv := httptest.NewServer(transporthttp.NewRouter(log, h, authSvc, teamsSvc, tasksSvc, analyticsSvc, commentsSvc, idp, userLimiter, ipLimiter, nil))
 	defer srv.Close()
 	baseURL = srv.URL
 

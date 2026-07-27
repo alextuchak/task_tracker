@@ -8,6 +8,7 @@ import (
 	"task_tracker/internal/service"
 	"task_tracker/internal/transport/http/analytics"
 	"task_tracker/internal/transport/http/auth"
+	"task_tracker/internal/transport/http/comments"
 	"task_tracker/internal/transport/http/middleware"
 	"task_tracker/internal/transport/http/tasks"
 	"task_tracker/internal/transport/http/teams"
@@ -22,6 +23,7 @@ import (
 
 func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 	teamsSvc *service.Teams, tasksSvc *service.Tasks, analyticsSvc *service.Analytics,
+	commentsSvc *service.Comments,
 	parser middleware.TokenParser, userLimiter, ipLimiter middleware.RateLimiter,
 	trustedNets []*net.IPNet,
 ) http.Handler {
@@ -47,6 +49,7 @@ func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 			r.Get("/me", auth.Me(authSvc))
 			r.Mount("/teams", teams.Routes(teamsSvc))
 			r.Mount("/tasks", tasks.Routes(tasksSvc))
+			r.Mount("/comments", comments.Routes(commentsSvc))
 			r.Mount("/analytics", analytics.Routes(analyticsSvc))
 		})
 	})

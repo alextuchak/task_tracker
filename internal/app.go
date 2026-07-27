@@ -59,9 +59,10 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	authz := service.NewAuthorizer(userRepo, teamRepo)
 	teamsService := service.NewTeams(teamRepo, userRepo, outboxRepo, trManager, authz)
 	tasksCache := cache.NewTasks(rdb, cfg.Redis.TasksTTL, log)
-	tasksService := service.NewTasks(
-		persistence.NewTaskRepo(db, getter), teamRepo, tasksCache, trManager, authz)
+	taskRepo := persistence.NewTaskRepo(db, getter)
+	tasksService := service.NewTasks(taskRepo, teamRepo, tasksCache, trManager, authz)
 	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db, getter), authz)
+	commentsService := service.NewComments(persistence.NewCommentRepo(db, getter), taskRepo, trManager, authz)
 	userLimiter := ratelimit.New(rdb, cfg.RateLimit, log)
 	ipLimiter := ratelimit.New(rdb, cfg.RateLimitPublic, log)
 
@@ -70,7 +71,7 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	go relay.Run(ctx)
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
-		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, idp, userLimiter, ipLimiter, cfg.RateLimitPublic.TrustedNets()),
+		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, commentsService, idp, userLimiter, ipLimiter, cfg.RateLimitPublic.TrustedNets()),
 		ReadTimeout:  cfg.HTTP.ReadTimeout,
 		WriteTimeout: cfg.HTTP.WriteTimeout,
 		IdleTimeout:  cfg.HTTP.IdleTimeout,
