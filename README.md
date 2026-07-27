@@ -160,6 +160,10 @@ fails open.
 | `GET /api/v1/tasks`                | List with filters + cursor pagination      | team member |
 | `PUT /api/v1/tasks/{id}`           | Update task (audited)                      | team member |
 | `GET /api/v1/tasks/{id}/history`   | Change history                             | team member |
+| `POST /api/v1/comments`            | Leave a comment on a task                  | team member |
+| `GET /api/v1/comments`             | Task comments with cursor pagination       | team member |
+| `PUT /api/v1/comments/{id}`        | Edit a comment                             | author or global admin |
+| `DELETE /api/v1/comments/{id}`     | Delete a comment                           | author or global admin |
 | `GET /api/v1/analytics/*`          | Team stats / top creators / integrity      | global admin |
 
 Full contract with schemas: **Swagger UI** at `/swagger/`.

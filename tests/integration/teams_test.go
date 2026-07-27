@@ -16,6 +16,13 @@ func registerAndLogin(t *testing.T, email string) string {
 	return login(t, email, "password123")
 }
 
+func invite(t *testing.T, owner string, teamID int64, email string) {
+	t.Helper()
+	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
+		fmt.Sprintf(`{"email":%q}`, email))
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
 func createTeam(t *testing.T, bearer, name string) int64 {
 	t.Helper()
 	resp := doJSON(t, http.MethodPost, "/api/v1/teams", bearer, fmt.Sprintf(`{"name":%q}`, name))

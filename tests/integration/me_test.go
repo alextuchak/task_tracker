@@ -23,6 +23,17 @@ func login(t *testing.T, email, password string) string {
 	return got.AccessToken
 }
 
+func userID(t *testing.T, bearer string) int64 {
+	t.Helper()
+	resp := doJSON(t, http.MethodGet, "/api/v1/me", bearer, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var got struct {
+		ID int64 `json:"id"`
+	}
+	decodeJSON(t, readBody(t, resp), &got)
+	return got.ID
+}
+
 func TestMeReturnsCurrentUser(t *testing.T) {
 	register(t, "me@test.io", "Ada", "password123")
 	bearer := login(t, "me@test.io", "password123")

@@ -147,6 +147,220 @@ const docTemplate = `{
                 }
             }
         },
+        "/comments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Task comments, oldest first, with pagination",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "task id",
+                        "name": "task_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size (1..100, default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "last seen id from next_cursor; omit for the first page",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_comments.commentListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid parameters",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "task not found or not a team member",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Leave a comment on a task (team members only)",
+                "parameters": [
+                    {
+                        "description": "comment data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_comments.createCommentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_comments.commentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid data",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "task not found or not a team member",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/comments/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Edit a comment (author or global admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "comment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "new body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_comments.updateCommentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_comments.commentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid data",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "not the author",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "comment not found or not a team member",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "comments"
+                ],
+                "summary": "Delete a comment (author or global admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "comment id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "deleted"
+                    },
+                    "400": {
+                        "description": "invalid comment id",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "not the author",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "comment not found or not a team member",
+                        "schema": {
+                            "$ref": "#/definitions/task_tracker_internal_transport_http_httpkit.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "post": {
                 "consumes": [
@@ -783,6 +997,62 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_comments.commentListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_comments.commentResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_comments.commentResponse": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_comments.createCommentRequest": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_comments.updateCommentRequest": {
+            "type": "object",
+            "properties": {
+                "body": {
                     "type": "string"
                 }
             }
