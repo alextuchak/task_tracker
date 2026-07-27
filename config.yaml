@@ -53,7 +53,7 @@ email:
 
 outbox:
   tick: 1s
-  budget: 10s
+  budget: 5s
   dedup_ttl: 1h
   batch: 100
   workers: 4

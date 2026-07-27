@@ -99,5 +99,10 @@ func (c *Config) Validate() error {
 	if err := config.ValidateField("outbox", &c.Outbox); err != nil {
 		return err
 	}
+	if window := c.Outbox.SettleWindow(); window > c.Shutdown.Phase {
+		return fmt.Errorf(
+			"outbox: a tick may hold its transaction for %s, longer than the shutdown phase %s",
+			window, c.Shutdown.Phase)
+	}
 	return nil
 }

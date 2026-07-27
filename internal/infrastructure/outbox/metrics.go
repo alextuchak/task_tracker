@@ -18,4 +18,12 @@ var (
 		Name: "outbox_oldest_pending_seconds",
 		Help: "Age of the oldest pending email in seconds (0 when the queue is empty)",
 	})
+	sendErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "outbox_send_errors_total",
+		Help: "Batch sends that returned an error, by reason: provider, budget, shutdown, paused, mismatch",
+	}, []string{"reason"})
+	tickErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "outbox_tick_errors_total",
+		Help: "Ticks whose transaction failed; a non-zero delivered count means those emails will be redelivered",
+	})
 )
