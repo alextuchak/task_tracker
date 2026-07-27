@@ -6,11 +6,16 @@ import (
 	"time"
 )
 
-const minSecretLen = 32
+const (
+	minSecretLen = 32
+	minCost      = 4
+	maxCost      = 31
+)
 
 type Config struct {
-	Secret string        `yaml:"secret"`
-	TTL    time.Duration `yaml:"ttl" env-default:"24h"`
+	Secret       string        `yaml:"secret"`
+	TTL          time.Duration `yaml:"ttl" env-default:"24h"`
+	PasswordCost int           `yaml:"password_cost" env-default:"10"`
 }
 
 func (c *Config) Validate() error {
@@ -22,6 +27,9 @@ func (c *Config) Validate() error {
 	}
 	if c.TTL <= 0 {
 		return fmt.Errorf("ttl must be positive, got: %s", c.TTL)
+	}
+	if c.PasswordCost < minCost || c.PasswordCost > maxCost {
+		return fmt.Errorf("password_cost must be %d..%d, got: %d", minCost, maxCost, c.PasswordCost)
 	}
 	return nil
 }

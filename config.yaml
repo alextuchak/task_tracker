@@ -43,6 +43,7 @@ rate_limit_public:
     - "198.18.0.0/15"
 
 auth:
+  password_cost: 10
   secret: "local-dev-secret-change-me-please-32b"
   ttl: 24h
 

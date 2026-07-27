@@ -28,8 +28,10 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -59,6 +61,20 @@ func run(m *testing.M) (int, error) {
 		tcmysql.WithDatabase("tasks"),
 		tcmysql.WithUsername("tasks"),
 		tcmysql.WithPassword("tasks"),
+		// throwaway data on a throwaway container: keep it in RAM and stop
+		// paying for durability we are about to discard
+		testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Tmpfs: map[string]string{"/var/lib/mysql": "rw"},
+				Cmd: []string{
+					"mysqld",
+					"--skip-log-bin",
+					"--innodb-flush-log-at-trx-commit=0",
+					"--innodb-doublewrite=0",
+					"--performance-schema=0",
+				},
+			},
+		}),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("mysql container: %w", err)
@@ -104,7 +120,7 @@ func run(m *testing.M) (int, error) {
 	getter := trmsql.DefaultCtxGetter
 	trManager := manager.Must(trmsql.NewDefaultFactory(db))
 	userRepo := persistence.NewUserRepo(db, trmsql.DefaultCtxGetter)
-	authSvc = service.NewAuth(userRepo, idp)
+	authSvc = service.NewAuth(userRepo, idp, bcrypt.MinCost)
 	teamRepo := persistence.NewTeamRepo(db, getter)
 	outboxRepo := persistence.NewOutboxRepo(db, getter)
 	authz := service.NewAuthorizer(userRepo, teamRepo)
