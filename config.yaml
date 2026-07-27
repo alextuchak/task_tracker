@@ -47,7 +47,14 @@ auth:
   ttl: 24h
 
 email:
-  base_url: "http://email-service:8080"
-  timeout: 3s
   max_failures: 3
-  open_for: 30s
+  open_for: 5s
+  timeout: 3s
+
+outbox:
+  tick: 1s
+  budget: 10s
+  dedup_ttl: 1h
+  batch: 100
+  workers: 4
+  max_attempts: 8

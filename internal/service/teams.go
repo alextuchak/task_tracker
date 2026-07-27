@@ -67,8 +67,6 @@ func (s *Teams) Invite(ctx context.Context, actorID, teamID int64, inviteeEmail 
 	if err != nil {
 		return fmt.Errorf("find invitee: %w", err)
 	}
-	// membership and the invite email are committed together: the email is
-	// queued in the outbox, never sent inline, and drained by the relay.
 	return s.tx.Do(ctx, func(ctx context.Context) error {
 		if err := s.teams.AddMember(ctx, teamID, invitee.ID, domain.TeamRoleMember); err != nil {
 			return err

@@ -10,6 +10,7 @@ import (
 	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
+	"task_tracker/internal/infrastructure/outbox"
 	"task_tracker/internal/infrastructure/persistence"
 	"task_tracker/internal/infrastructure/ratelimit"
 	"time"
@@ -35,11 +36,12 @@ type Config struct {
 	Env             string                  `env:"ENV" env-default:"local"`
 	Auth            identity.Config         `yaml:"auth"`
 	Redis           cache.Config            `yaml:"redis"`
-	HTTP            HTTPConfig              `yaml:"http"`
-	Email           email.Config            `yaml:"email"`
+	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
 	MySQL           persistence.Config      `yaml:"mysql"`
 	RateLimit       ratelimit.Config        `yaml:"rate_limit"`
-	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
+	HTTP            HTTPConfig              `yaml:"http"`
+	Outbox          outbox.Config           `yaml:"outbox"`
+	Email           email.Config            `yaml:"email"`
 	Shutdown        lifecycle.CloserConfig  `yaml:"shutdown"`
 	Startup         lifecycle.StarterConfig `yaml:"startup"`
 	Health          health.Config           `yaml:"health"`
@@ -92,6 +94,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := config.ValidateField("rate_limit_public", &c.RateLimitPublic); err != nil {
+		return err
+	}
+	if err := config.ValidateField("outbox", &c.Outbox); err != nil {
 		return err
 	}
 	return nil

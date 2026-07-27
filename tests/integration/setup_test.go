@@ -26,15 +26,17 @@ import (
 	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
 	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
 	"github.com/pressly/goose/v3"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 )
 
 var (
-	baseURL string
-	authSvc *service.Auth
-	testDB  *sql.DB
+	baseURL   string
+	authSvc   *service.Auth
+	testDB    *sql.DB
+	testRedis *redis.Client
 )
 
 func TestMain(m *testing.M) {
@@ -95,6 +97,7 @@ func run(m *testing.M) (int, error) {
 
 	rdb := cache.NewRedis(cache.Config{Addr: redisAddr})
 	defer func() { _ = rdb.Close() }()
+	testRedis = rdb
 
 	log := slog.New(slog.DiscardHandler)
 	idp := identity.NewProvider(identity.Config{Secret: strings.Repeat("s", 32), TTL: time.Hour})
