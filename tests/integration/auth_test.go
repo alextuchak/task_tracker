@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestRegisterCreated(t *testing.T) {
@@ -28,6 +29,21 @@ func TestRegisterCreated(t *testing.T) {
 	assert.Equal(t, email, got.Email)
 	assert.Equal(t, "Ada", got.Name)
 	assert.NotContains(t, body, "password")
+}
+
+func TestRegisterHashesWithTheConfiguredCost(t *testing.T) {
+	t.Parallel()
+	email := mail("cost")
+	register(t, email, "Ada", "password123")
+
+	var hash string
+	require.NoError(t, testDB.QueryRow(
+		`SELECT password_hash FROM users WHERE email = ?`, email).Scan(&hash))
+
+	cost, err := bcrypt.Cost([]byte(hash))
+	require.NoError(t, err)
+	assert.Equal(t, bcrypt.MinCost, cost,
+		"the harness injects the cheapest cost; a hardcoded one would ignore the config")
 }
 
 func TestRegisterDuplicateEmail(t *testing.T) {

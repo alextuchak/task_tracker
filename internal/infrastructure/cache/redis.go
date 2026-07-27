@@ -11,6 +11,8 @@ func NewRedis(cfg Config) *redis.Client {
 		Password:      cfg.Password,
 		DB:            cfg.DB,
 		DialTimeout:   cfg.DialTimeout,
+		ReadTimeout:   cfg.ReadTimeout,
+		WriteTimeout:  cfg.WriteTimeout,
 		MaxRetries:    cfg.MaxRetries,
 		DialerRetries: cfg.DialerRetries,
 	})

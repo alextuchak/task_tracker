@@ -8,8 +8,10 @@ import (
 
 const (
 	minSecretLen = 32
-	minCost      = 4
-	maxCost      = 31
+	// bcrypt allows 4, but a production password hash must not be that cheap;
+	// the test harness passes its own cost directly and never goes through here
+	minCost = 10
+	maxCost = 15
 )
 
 type Config struct {

@@ -15,6 +15,8 @@ type Config struct {
 	// discovered fast: the driver's own defaults spend ~1.7s retrying before
 	// the caller ever sees an error.
 	DialTimeout   time.Duration `yaml:"dial_timeout" env-default:"1s"`
+	ReadTimeout   time.Duration `yaml:"read_timeout" env-default:"500ms"`
+	WriteTimeout  time.Duration `yaml:"write_timeout" env-default:"500ms"`
 	MaxRetries    int           `yaml:"max_retries" env-default:"1"`
 	DialerRetries int           `yaml:"dialer_retries" env-default:"1"`
 }
@@ -32,8 +34,14 @@ func (c *Config) Validate() error {
 	if c.DialTimeout <= 0 {
 		return fmt.Errorf("dial_timeout must be positive, got: %s", c.DialTimeout)
 	}
-	if c.MaxRetries < -1 {
-		return fmt.Errorf("max_retries must be -1 or greater, got: %d", c.MaxRetries)
+	if c.ReadTimeout <= 0 || c.WriteTimeout <= 0 {
+		return fmt.Errorf("read_timeout and write_timeout must be positive, got: %s and %s",
+			c.ReadTimeout, c.WriteTimeout)
+	}
+	// the driver reads 0 as "use my default of 3 retries", which is the
+	// slow behaviour this config exists to avoid
+	if c.MaxRetries < -1 || c.MaxRetries == 0 {
+		return fmt.Errorf("max_retries must be -1 (none) or at least 1, got: %d", c.MaxRetries)
 	}
 	if c.DialerRetries < 1 {
 		return fmt.Errorf("dialer_retries must be positive, got: %d", c.DialerRetries)

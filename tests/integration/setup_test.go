@@ -66,7 +66,7 @@ func run(m *testing.M) (int, error) {
 		// paying for durability we are about to discard
 		testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
-				Tmpfs: map[string]string{"/var/lib/mysql": "rw"},
+				Tmpfs: map[string]string{"/var/lib/mysql": "rw,size=1g"},
 				Cmd: []string{
 					"mysqld",
 					"--skip-log-bin",
@@ -177,7 +177,10 @@ func doJSON(t *testing.T, method, path, bearer, body string) *http.Response {
 	}
 	resp, err := testClient.Do(req)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
+	t.Cleanup(func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	})
 	return resp
 }
 

@@ -36,10 +36,7 @@ type stubSender struct {
 	// truncate returns fewer results than messages — a provider contract breach
 	truncate bool
 	// hold makes the provider slow, so the caller's context can end the call
-	hold time.Duration
-	// deaf makes the slow provider ignore cancellation, the way a client
-	// that does not thread the context would
-	deaf         bool
+	hold         time.Duration
 	abortedByCtx bool
 	// entered is closed when a call arrives, gate blocks it there until the
 	// test lets go — a provider held mid-flight without guessing a duration
@@ -57,9 +54,24 @@ func (s *stubSender) holdUntilReleased() {
 	s.entered = make(chan struct{})
 	s.gate = make(chan struct{})
 	s.releaseOnce = sync.OnceFunc(func() { close(s.gate) })
+	// A test that blocks on the relay before reaching its own release would
+	// otherwise hang until the whole binary times out, hiding the assertion
+	// it was written to make.
+	time.AfterFunc(5*time.Second, s.release)
 }
 
 func (s *stubSender) release() { s.releaseOnce() }
+
+// waitEntered fails instead of parking forever when the relay never reaches the
+// provider at all — the gate is not ctx-aware, so nothing else would free it.
+func (s *stubSender) waitEntered(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the relay never reached the provider")
+	}
+}
 
 func newStubSender() *stubSender { return &stubSender{sent: map[string]int{}} }
 
@@ -67,18 +79,17 @@ func (s *stubSender) SendBatch(ctx context.Context, msgs []outbox.Message) ([]ou
 	s.mu.Lock()
 	s.calls++
 	s.maxBatch = max(s.maxBatch, len(msgs))
-	hold, deaf, gate := s.hold, s.deaf, s.gate
+	hold, gate := s.hold, s.gate
 	s.mu.Unlock()
 
+	// the gate wait is deliberately not ctx-aware: it models a provider that
+	// has already accepted the batch when cancellation arrives
 	if gate != nil {
 		s.enterOnce.Do(func() { close(s.entered) })
 		<-gate
 	}
 
-	switch {
-	case hold > 0 && deaf:
-		time.Sleep(hold)
-	case hold > 0:
+	if hold > 0 {
 		select {
 		case <-ctx.Done():
 			s.mu.Lock()
@@ -517,7 +528,7 @@ func TestOutboxDrainWaitsForTheInFlightTickToSettle(t *testing.T) {
 	defer sender.release()
 	h := startRelay(t, sender, fastConfig(8))
 
-	<-sender.entered
+	sender.waitEntered(t)
 	h.cancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -559,7 +570,7 @@ func TestOutboxDrainReportsWhenItRunsOutOfTime(t *testing.T) {
 	defer sender.release()
 	h := startRelay(t, sender, fastConfig(8))
 
-	<-sender.entered
+	sender.waitEntered(t)
 	h.cancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
