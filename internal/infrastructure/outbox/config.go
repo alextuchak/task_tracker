@@ -7,7 +7,7 @@ import (
 
 type Config struct {
 	Tick        time.Duration `yaml:"tick" env-default:"1s"`
-	Budget      time.Duration `yaml:"budget" env-default:"10s"`
+	Budget      time.Duration `yaml:"budget" env-default:"5s"`
 	DedupTTL    time.Duration `yaml:"dedup_ttl" env-default:"1h"`
 	Batch       int           `yaml:"batch" env-default:"100"`
 	Workers     int           `yaml:"workers" env-default:"4"`

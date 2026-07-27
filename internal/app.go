@@ -69,6 +69,7 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	dedup := cache.NewDedup(rdb, cfg.Outbox.DedupTTL, log)
 	relay := outbox.NewRelay(outboxRepo, email.NewClient(cfg.Email, log), dedup, trManager, cfg.Outbox, log)
 	go relay.Run(ctx)
+	c.AddDrain(relay.Drain)
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
 		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, commentsService, idp, userLimiter, ipLimiter, cfg.RateLimitPublic.TrustedNets()),

@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"math/rand/v2"
@@ -27,6 +28,8 @@ type Repo interface {
 	OldestPendingAge(ctx context.Context) (time.Duration, error)
 }
 
+// Sender must return promptly once ctx is done: the settle window, and the
+// config check built on it, assume a tick cannot outlive its send budget.
 type Sender interface {
 	SendBatch(ctx context.Context, msgs []Message) ([]SendResult, error)
 }
@@ -44,10 +47,14 @@ type retryAfter interface {
 	RetryAfterHint() time.Duration
 }
 
+// SettleWindow is the longest a single tick can hold its transaction: the send
+// budget plus the grace left for settling the result after the sends are done.
+func (c Config) SettleWindow() time.Duration { return c.Budget + settleGrace }
+
 func NewRelay(repo Repo, sender Sender, dedup Deduper, tx TxManager, cfg Config, log *slog.Logger) *Relay {
 	return &Relay{
 		repo: repo, sender: sender, dedup: dedup, tx: tx,
-		cfg: cfg, log: log,
+		cfg: cfg, log: log, done: make(chan struct{}),
 	}
 }
 
@@ -57,11 +64,14 @@ type Relay struct {
 	dedup  Deduper
 	tx     TxManager
 	log    *slog.Logger
+	done   chan struct{}
 	cfg    Config
 	paused atomic.Int64
 }
 
+// Run may be called once per Relay: it closes the channel Drain waits on.
 func (r *Relay) Run(ctx context.Context) {
+	defer close(r.done)
 	ticker := time.NewTicker(r.cfg.Tick)
 	defer ticker.Stop()
 	for {
@@ -77,8 +87,20 @@ func (r *Relay) Run(ctx context.Context) {
 	}
 }
 
+// Drain waits for Run to return. A tick settles its result on a context that
+// survives cancellation, so the loop can only exit between ticks or after one
+// has finished writing — waiting for the loop is waiting for the write.
+func (r *Relay) Drain(ctx context.Context) error {
+	select {
+	case <-r.done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("outbox relay is still settling: %w", ctx.Err())
+	}
+}
+
 func (r *Relay) tick(parent context.Context) {
-	txCtx, cancelTx := context.WithTimeout(context.WithoutCancel(parent), r.cfg.Budget+settleGrace)
+	txCtx, cancelTx := context.WithTimeout(context.WithoutCancel(parent), r.cfg.SettleWindow())
 	defer cancelTx()
 	sendCtx, cancelSend := context.WithTimeout(parent, r.cfg.Budget)
 	defer cancelSend()
@@ -106,14 +128,21 @@ func (r *Relay) tick(parent context.Context) {
 		}
 		return r.repo.MarkFailed(ctx, s.fail)
 	})
-	if err != nil {
-		r.log.Error("outbox tick", slog.Any("error", err))
-		return
-	}
-
 	if s.paused {
 		r.pause(s.pause)
 	}
+	if err != nil {
+		tickErrorsTotal.Inc()
+		r.log.Error("outbox tick failed",
+			slog.Int("delivered_before_failure", s.delivered),
+			slog.Int("to_reschedule", len(s.reschedule)),
+			slog.Int("to_fail", len(s.fail)),
+			slog.Bool("rows_will_be_reclaimed", s.delivered > 0),
+			slog.Any("error", err))
+		return
+	}
+
+	sentTotal.Add(float64(s.delivered))
 	failedTotal.Add(float64(len(s.fail)))
 }
 
@@ -133,10 +162,11 @@ func (r *Relay) dispatch(ctx context.Context, claimed []Claimed) settlement {
 }
 
 type shardOutcome struct {
-	sent   []int64
-	retry  []retryItem
-	pause  time.Duration
-	paused bool
+	sent      []int64
+	retry     []retryItem
+	pause     time.Duration
+	delivered int
+	paused    bool
 }
 
 type retryItem struct {
@@ -147,10 +177,13 @@ type retryItem struct {
 func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel context.CancelCauseFunc) shardOutcome {
 	var out shardOutcome
 	if ctx.Err() != nil {
-		if errors.Is(context.Cause(ctx), errPaused) {
+		switch {
+		case errors.Is(context.Cause(ctx), errPaused):
 			r.log.Debug("outbox shard skipped: downstream paused by a sibling",
 				slog.Int("skipped", len(shard)))
-		} else {
+		case errors.Is(ctx.Err(), context.Canceled):
+			r.log.Info("outbox shard skipped: shutdown", slog.Int("skipped", len(shard)))
+		default:
 			r.log.Warn("outbox shard skipped: tick budget expired",
 				slog.Int("skipped", len(shard)))
 		}
@@ -177,11 +210,33 @@ func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel contex
 		if errors.As(err, &hint) {
 			out.pause = hint.RetryAfterHint()
 		}
+		switch {
+		case errors.Is(context.Cause(ctx), errPaused):
+			sendErrorsTotal.WithLabelValues("paused").Inc()
+			r.log.Debug("outbox send aborted: downstream paused by a sibling",
+				slog.Int("deferred", len(msgs)))
+		case errors.Is(err, context.Canceled):
+			sendErrorsTotal.WithLabelValues("shutdown").Inc()
+			r.log.Info("outbox send aborted: shutdown", slog.Int("deferred", len(msgs)))
+			cancel(errPaused)
+			return out
+		case errors.Is(err, context.DeadlineExceeded):
+			sendErrorsTotal.WithLabelValues("budget").Inc()
+			r.log.Warn("outbox send exceeded the tick budget",
+				slog.Int("deferred", len(msgs)), slog.Any("error", err))
+		default:
+			sendErrorsTotal.WithLabelValues("provider").Inc()
+			r.log.Error("outbox batch send failed",
+				slog.Int("deferred", len(msgs)),
+				slog.Duration("retry_after", out.pause),
+				slog.Any("error", err))
+		}
 		out.paused = true
 		cancel(errPaused)
 		return out
 	}
 	if len(results) != len(msgs) {
+		sendErrorsTotal.WithLabelValues("mismatch").Inc()
 		r.log.Error("outbox: provider returned a mismatched result count",
 			slog.Int("sent", len(msgs)), slog.Int("got", len(results)))
 		out.paused = true
@@ -195,7 +250,7 @@ func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel contex
 			continue
 		}
 		r.dedup.MarkSent(ctx, c.ID)
-		sentTotal.Inc()
+		out.delivered++
 		out.sent = append(out.sent, c.ID)
 	}
 	return out
@@ -206,6 +261,7 @@ type settlement struct {
 	reschedule []Retry
 	fail       []Failure
 	pause      time.Duration
+	delivered  int
 	paused     bool
 }
 
@@ -213,6 +269,7 @@ func (r *Relay) collect(outcomes []shardOutcome) settlement {
 	var s settlement
 	for _, o := range outcomes {
 		s.sent = append(s.sent, o.sent...)
+		s.delivered += o.delivered
 		for _, it := range o.retry {
 			attempts := it.claimed.Attempts + 1
 			if attempts >= r.cfg.MaxAttempts {
