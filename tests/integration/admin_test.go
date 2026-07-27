@@ -11,8 +11,10 @@ import (
 )
 
 func TestRegisterGetsUserRole(t *testing.T) {
-	register(t, "plain@test.io", "Ada", "password123")
-	bearer := login(t, "plain@test.io", "password123")
+	t.Parallel()
+	email := mail("plain")
+	register(t, email, "Ada", "password123")
+	bearer := login(t, email, "password123")
 
 	resp := doJSON(t, http.MethodGet, "/api/v1/me", bearer, "")
 
@@ -25,12 +27,14 @@ func TestRegisterGetsUserRole(t *testing.T) {
 }
 
 func TestGrantAdminVisibleViaAPI(t *testing.T) {
-	register(t, "root@test.io", "Root", "password123")
+	t.Parallel()
+	email := mail("root")
+	register(t, email, "Root", "password123")
 
-	require.NoError(t, authSvc.GrantAdmin(context.Background(), "root@test.io"))
-	require.NoError(t, authSvc.GrantAdmin(context.Background(), "root@test.io"))
+	require.NoError(t, authSvc.GrantAdmin(context.Background(), email))
+	require.NoError(t, authSvc.GrantAdmin(context.Background(), email))
 
-	bearer := login(t, "root@test.io", "password123")
+	bearer := login(t, email, "password123")
 	resp := doJSON(t, http.MethodGet, "/api/v1/me", bearer, "")
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -42,6 +46,7 @@ func TestGrantAdminVisibleViaAPI(t *testing.T) {
 }
 
 func TestGrantAdminUnknownEmail(t *testing.T) {
+	t.Parallel()
 	err := authSvc.GrantAdmin(context.Background(), "nobody@test.io")
 
 	require.ErrorIs(t, err, domain.ErrNotFound)

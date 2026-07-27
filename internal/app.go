@@ -53,7 +53,7 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 
 	idp := identity.NewProvider(cfg.Auth)
 	userRepo := persistence.NewUserRepo(db, getter)
-	authService := service.NewAuth(userRepo, idp)
+	authService := service.NewAuth(userRepo, idp, cfg.Auth.PasswordCost)
 	teamRepo := persistence.NewTeamRepo(db, getter)
 	outboxRepo := persistence.NewOutboxRepo(db, getter)
 	authz := service.NewAuthorizer(userRepo, teamRepo)

@@ -27,6 +27,29 @@ func TestConfigRejectsSettleWindowLongerThanShutdownPhase(t *testing.T) {
 		"a tick that outlives the shutdown phase would be cut off mid-settlement")
 }
 
+func TestConfigRejectsWeakPasswordCost(t *testing.T) {
+	t.Setenv("CONFIG_PATH", "../config.yaml")
+	cases := []struct {
+		name string
+		cost int
+	}{
+		{"below the floor", 9},
+		{"bcrypt minimum is not enough for production", 4},
+		{"above bcrypt maximum", 32},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := internal.NewConfig()
+			require.NoError(t, err)
+
+			cfg.Auth.PasswordCost = c.cost
+
+			require.ErrorContains(t, cfg.Validate(), "password_cost")
+		})
+	}
+}
+
 func TestConfigAcceptsSettleWindowEqualToShutdownPhase(t *testing.T) {
 	t.Setenv("CONFIG_PATH", "../config.yaml")
 	cfg, err := internal.NewConfig()

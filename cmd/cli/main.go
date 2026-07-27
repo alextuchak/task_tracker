@@ -72,6 +72,7 @@ func buildAuthService() (*service.Auth, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("mysql: %w", err)
 	}
-	svc := service.NewAuth(persistence.NewUserRepo(db, trmsql.DefaultCtxGetter), identity.NewProvider(cfg.Auth))
+	svc := service.NewAuth(persistence.NewUserRepo(db, trmsql.DefaultCtxGetter),
+		identity.NewProvider(cfg.Auth), cfg.Auth.PasswordCost)
 	return svc, func() { _ = db.Close() }, nil
 }

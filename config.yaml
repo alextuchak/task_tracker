@@ -14,6 +14,11 @@ mysql:
   conn_max_lifetime: 5m
 
 redis:
+  dial_timeout: 1s
+  read_timeout: 500ms
+  write_timeout: 500ms
+  max_retries: 1
+  dialer_retries: 1
   addr: "redis:6379"
   db: 0
   tasks_ttl: 5m
@@ -43,6 +48,7 @@ rate_limit_public:
     - "198.18.0.0/15"
 
 auth:
+  password_cost: 10
   secret: "local-dev-secret-change-me-please-32b"
   ttl: 24h
 

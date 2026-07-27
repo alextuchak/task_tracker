@@ -35,7 +35,8 @@ func leaveComment(t *testing.T, bearer string, taskID int64, body string) commen
 }
 
 func TestAuthorEditsAndDeletesOwnComment(t *testing.T) {
-	owner := registerAndLogin(t, "c-author@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-author"))
 	teamID := createTeam(t, owner, "c-author")
 	task := createTask(t, owner, teamID, "task")
 
@@ -67,13 +68,15 @@ func TestAuthorEditsAndDeletesOwnComment(t *testing.T) {
 }
 
 func TestMemberLeavesCommentVisibleToTeam(t *testing.T) {
-	owner := registerAndLogin(t, "c-member-owner@comments.io")
-	registerAndLogin(t, "c-member@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-member-owner"))
+	memberEmail := mail("c-member")
+	registerAndLogin(t, memberEmail)
 	teamID := createTeam(t, owner, "c-member")
 	task := createTask(t, owner, teamID, "task")
-	invite(t, owner, teamID, "c-member@comments.io")
+	invite(t, owner, teamID, memberEmail)
 
-	member := login(t, "c-member@comments.io", "password123")
+	member := login(t, memberEmail, "password123")
 	memberID := userID(t, member)
 	comment := leaveComment(t, member, task.ID, "from member")
 	require.Equal(t, memberID, comment.UserID)
@@ -90,8 +93,9 @@ func TestMemberLeavesCommentVisibleToTeam(t *testing.T) {
 }
 
 func TestOutsiderCannotSeeOrLeaveComments(t *testing.T) {
-	owner := registerAndLogin(t, "c-out-owner@comments.io")
-	outsider := registerAndLogin(t, "c-outsider@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-out-owner"))
+	outsider := registerAndLogin(t, mail("c-outsider"))
 	teamID := createTeam(t, owner, "c-out")
 	task := createTask(t, owner, teamID, "task")
 	comment := leaveComment(t, owner, task.ID, "private")
@@ -113,13 +117,15 @@ func TestOutsiderCannotSeeOrLeaveComments(t *testing.T) {
 }
 
 func TestMemberEditsAndDeletesOwnComment(t *testing.T) {
-	owner := registerAndLogin(t, "c-own-owner@comments.io")
-	registerAndLogin(t, "c-own-member@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-own-owner"))
+	memberEmail := mail("c-own-member")
+	registerAndLogin(t, memberEmail)
 	teamID := createTeam(t, owner, "c-own")
 	task := createTask(t, owner, teamID, "task")
-	invite(t, owner, teamID, "c-own-member@comments.io")
+	invite(t, owner, teamID, memberEmail)
 
-	member := login(t, "c-own-member@comments.io", "password123")
+	member := login(t, memberEmail, "password123")
 	comment := leaveComment(t, member, task.ID, "mine")
 	require.Equal(t, userID(t, member), comment.UserID)
 
@@ -136,13 +142,15 @@ func TestMemberEditsAndDeletesOwnComment(t *testing.T) {
 }
 
 func TestTeamOwnerCannotModerateMemberComment(t *testing.T) {
-	owner := registerAndLogin(t, "c-mod-owner@comments.io")
-	registerAndLogin(t, "c-mod-member@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-mod-owner"))
+	memberEmail := mail("c-mod-member")
+	registerAndLogin(t, memberEmail)
 	teamID := createTeam(t, owner, "c-mod")
 	task := createTask(t, owner, teamID, "task")
-	invite(t, owner, teamID, "c-mod-member@comments.io")
+	invite(t, owner, teamID, memberEmail)
 
-	member := login(t, "c-mod-member@comments.io", "password123")
+	member := login(t, memberEmail, "password123")
 	comment := leaveComment(t, member, task.ID, "member's words")
 
 	resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/v1/comments/%d", comment.ID), owner,
@@ -154,7 +162,8 @@ func TestTeamOwnerCannotModerateMemberComment(t *testing.T) {
 }
 
 func TestCommentBodyIsStoredTrimmed(t *testing.T) {
-	owner := registerAndLogin(t, "c-trim@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-trim"))
 	teamID := createTeam(t, owner, "c-trim")
 	task := createTask(t, owner, teamID, "task")
 
@@ -164,14 +173,16 @@ func TestCommentBodyIsStoredTrimmed(t *testing.T) {
 }
 
 func TestMemberCannotEditForeignComment(t *testing.T) {
-	owner := registerAndLogin(t, "c-foreign-owner@comments.io")
-	registerAndLogin(t, "c-foreign-member@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-foreign-owner"))
+	memberEmail := mail("c-foreign-member")
+	registerAndLogin(t, memberEmail)
 	teamID := createTeam(t, owner, "c-foreign")
 	task := createTask(t, owner, teamID, "task")
-	invite(t, owner, teamID, "c-foreign-member@comments.io")
+	invite(t, owner, teamID, memberEmail)
 	comment := leaveComment(t, owner, task.ID, "owner's words")
 
-	member := login(t, "c-foreign-member@comments.io", "password123")
+	member := login(t, memberEmail, "password123")
 
 	resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/v1/comments/%d", comment.ID), member,
 		`{"body":"hijacked"}`)
@@ -182,12 +193,13 @@ func TestMemberCannotEditForeignComment(t *testing.T) {
 }
 
 func TestGlobalAdminModeratesForeignComment(t *testing.T) {
-	owner := registerAndLogin(t, "c-admin-owner@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-admin-owner"))
 	teamID := createTeam(t, owner, "c-admin")
 	task := createTask(t, owner, teamID, "task")
 	comment := leaveComment(t, owner, task.ID, "needs moderation")
 
-	admin := makeAdmin(t, "c-admin@comments.io")
+	admin := makeAdmin(t, mail("c-admin"))
 
 	resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/v1/comments/%d", comment.ID), admin,
 		`{"body":"moderated"}`)
@@ -202,7 +214,8 @@ func TestGlobalAdminModeratesForeignComment(t *testing.T) {
 }
 
 func TestCommentsPaginateByCursor(t *testing.T) {
-	owner := registerAndLogin(t, "c-page@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-page"))
 	teamID := createTeam(t, owner, "c-page")
 	task := createTask(t, owner, teamID, "task")
 	other := createTask(t, owner, teamID, "other task")
@@ -240,7 +253,8 @@ func TestCommentsPaginateByCursor(t *testing.T) {
 }
 
 func TestCommentCreateValidation(t *testing.T) {
-	owner := registerAndLogin(t, "c-valid@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-valid"))
 	teamID := createTeam(t, owner, "c-valid")
 	task := createTask(t, owner, teamID, "task")
 
@@ -268,7 +282,8 @@ func TestCommentCreateValidation(t *testing.T) {
 }
 
 func TestCommentListRejectsBadFilters(t *testing.T) {
-	owner := registerAndLogin(t, "c-filter@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-filter"))
 	teamID := createTeam(t, owner, "c-filter")
 	task := createTask(t, owner, teamID, "task")
 
@@ -296,7 +311,8 @@ func TestCommentListRejectsBadFilters(t *testing.T) {
 }
 
 func TestCommentUpdateAndDeleteRejectBadRequests(t *testing.T) {
-	owner := registerAndLogin(t, "c-badreq@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-badreq"))
 	teamID := createTeam(t, owner, "c-badreq")
 	task := createTask(t, owner, teamID, "task")
 	comment := leaveComment(t, owner, task.ID, "body")
@@ -321,7 +337,8 @@ func TestCommentUpdateAndDeleteRejectBadRequests(t *testing.T) {
 }
 
 func TestCommentOnMissingTask(t *testing.T) {
-	owner := registerAndLogin(t, "c-missing@comments.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("c-missing"))
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/comments", owner, `{"task_id":999999,"body":"hi"}`)
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)

@@ -20,13 +20,14 @@ type TokenIssuer interface {
 	Issue(userID int64) (string, error)
 }
 
-func NewAuth(users UserRepository, tokens TokenIssuer) *Auth {
-	return &Auth{users: users, tokens: tokens}
+func NewAuth(users UserRepository, tokens TokenIssuer, passwordCost int) *Auth {
+	return &Auth{users: users, tokens: tokens, passwordCost: passwordCost}
 }
 
 type Auth struct {
-	users  UserRepository
-	tokens TokenIssuer
+	users        UserRepository
+	tokens       TokenIssuer
+	passwordCost int
 }
 
 type User struct {
@@ -37,7 +38,7 @@ type User struct {
 }
 
 func (a *Auth) Register(ctx context.Context, email, name, password string) (User, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), a.passwordCost)
 	if err != nil {
 		return User{}, fmt.Errorf("hash password: %w", err)
 	}

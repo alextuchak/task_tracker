@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -35,7 +34,8 @@ func createTeam(t *testing.T, bearer, name string) int64 {
 }
 
 func TestCreateTeamCreatorBecomesOwner(t *testing.T) {
-	bearer := registerAndLogin(t, "owner1@teams.io")
+	t.Parallel()
+	bearer := registerAndLogin(t, mail("owner1"))
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/teams", bearer, `{"name":"backend"}`)
 
@@ -52,7 +52,8 @@ func TestCreateTeamCreatorBecomesOwner(t *testing.T) {
 }
 
 func TestCreateTeamValidation(t *testing.T) {
-	bearer := registerAndLogin(t, "owner2@teams.io")
+	t.Parallel()
+	bearer := registerAndLogin(t, mail("owner2"))
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/teams", bearer, `{"name":""}`)
 
@@ -60,8 +61,9 @@ func TestCreateTeamValidation(t *testing.T) {
 }
 
 func TestListShowsOnlyOwnTeams(t *testing.T) {
-	alice := registerAndLogin(t, "alice@teams.io")
-	bob := registerAndLogin(t, "bob@teams.io")
+	t.Parallel()
+	alice := registerAndLogin(t, mail("alice"))
+	bob := registerAndLogin(t, mail("bob"))
 	createTeam(t, alice, "alice-team")
 	createTeam(t, bob, "bob-team")
 
@@ -79,16 +81,18 @@ func TestListShowsOnlyOwnTeams(t *testing.T) {
 }
 
 func TestInviteByOwner(t *testing.T) {
-	owner := registerAndLogin(t, "inv-owner@teams.io")
-	registerAndLogin(t, "invitee@teams.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("inv-owner"))
+	inviteeEmail := mail("invitee")
+	registerAndLogin(t, inviteeEmail)
 	teamID := createTeam(t, owner, "inv-team")
 
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"invitee@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, inviteeEmail))
 
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-	invitee := login(t, "invitee@teams.io", "password123")
+	invitee := login(t, inviteeEmail, "password123")
 	listResp := doJSON(t, http.MethodGet, "/api/v1/teams", invitee, "")
 	var teams []struct {
 		Name string `json:"name"`
@@ -101,62 +105,70 @@ func TestInviteByOwner(t *testing.T) {
 }
 
 func TestInviteByMemberForbidden(t *testing.T) {
-	owner := registerAndLogin(t, "mf-owner@teams.io")
-	registerAndLogin(t, "mf-member@teams.io")
-	registerAndLogin(t, "mf-target@teams.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("mf-owner"))
+	memberEmail := mail("mf-member")
+	registerAndLogin(t, memberEmail)
+	targetEmail := mail("mf-target")
+	registerAndLogin(t, targetEmail)
 	teamID := createTeam(t, owner, "mf-team")
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"mf-member@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, memberEmail))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-	member := login(t, "mf-member@teams.io", "password123")
+	member := login(t, memberEmail, "password123")
 	resp = doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), member,
-		`{"email":"mf-target@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, targetEmail))
 
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
 func TestInviteByOutsiderMaskedAsNotFound(t *testing.T) {
-	owner := registerAndLogin(t, "out-owner@teams.io")
-	outsider := registerAndLogin(t, "outsider@teams.io")
+	t.Parallel()
+	ownerEmail := mail("out-owner")
+	owner := registerAndLogin(t, ownerEmail)
+	outsider := registerAndLogin(t, mail("outsider"))
 	teamID := createTeam(t, owner, "out-team")
 
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), outsider,
-		`{"email":"out-owner@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, ownerEmail))
 
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 func TestInviteByGlobalAdminIntoForeignTeam(t *testing.T) {
-	owner := registerAndLogin(t, "ga-owner@teams.io")
-	registerAndLogin(t, "ga-admin@teams.io")
-	registerAndLogin(t, "ga-target@teams.io")
-	teamID := createTeam(t, owner, "ga-team")
-	require.NoError(t, authSvc.GrantAdmin(context.Background(), "ga-admin@teams.io"))
+	t.Parallel()
+	owner := registerAndLogin(t, mail("ga-owner"))
 
-	admin := login(t, "ga-admin@teams.io", "password123")
+	targetEmail := mail("ga-target")
+	registerAndLogin(t, targetEmail)
+	teamID := createTeam(t, owner, "ga-team")
+	admin := makeAdmin(t, mail("ga-admin"))
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), admin,
-		`{"email":"ga-target@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, targetEmail))
 
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
 func TestInviteDuplicate(t *testing.T) {
-	owner := registerAndLogin(t, "dup-owner@teams.io")
-	registerAndLogin(t, "dup-invitee@teams.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("dup-owner"))
+	inviteeEmail := mail("dup-invitee")
+	registerAndLogin(t, inviteeEmail)
 	teamID := createTeam(t, owner, "dup-team")
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"dup-invitee@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, inviteeEmail))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	resp = doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"dup-invitee@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, inviteeEmail))
 
 	require.Equal(t, http.StatusConflict, resp.StatusCode)
 }
 
 func TestInviteUnknownEmail(t *testing.T) {
-	owner := registerAndLogin(t, "ue-owner@teams.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("ue-owner"))
 	teamID := createTeam(t, owner, "ue-team")
 
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
@@ -166,41 +178,45 @@ func TestInviteUnknownEmail(t *testing.T) {
 }
 
 func TestInviteEnqueuesEmail(t *testing.T) {
-	owner := registerAndLogin(t, "em-owner@teams.io")
-	registerAndLogin(t, "em-invitee@teams.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("em-owner"))
+	inviteeEmail := mail("em-invitee")
+	registerAndLogin(t, inviteeEmail)
 	teamID := createTeam(t, owner, "em-team")
 
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"em-invitee@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, inviteeEmail))
 
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	var count int
 	err := testDB.QueryRow(
 		`SELECT COUNT(*) FROM email_outbox WHERE recipient = ? AND status = 'pending'`,
-		"em-invitee@teams.io").Scan(&count)
+		inviteeEmail).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
 
 func TestInviteEnqueueIsAtomicWithMembership(t *testing.T) {
-	owner := registerAndLogin(t, "atomic-owner@teams.io")
-	registerAndLogin(t, "atomic-invitee@teams.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("atomic-owner"))
+	inviteeEmail := mail("atomic-invitee")
+	registerAndLogin(t, inviteeEmail)
 	teamID := createTeam(t, owner, "atomic-team")
 
 	// invite the same member twice: the second AddMember hits a duplicate and
 	// rolls the whole transaction back, so no second outbox row is written.
 	first := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"atomic-invitee@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, inviteeEmail))
 	require.Equal(t, http.StatusNoContent, first.StatusCode)
 	second := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"atomic-invitee@teams.io"}`)
+		fmt.Sprintf(`{"email":%q}`, inviteeEmail))
 	require.Equal(t, http.StatusConflict, second.StatusCode)
 
 	var count int
 	err := testDB.QueryRow(
 		`SELECT COUNT(*) FROM email_outbox WHERE recipient = ?`,
-		"atomic-invitee@teams.io").Scan(&count)
+		inviteeEmail).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
