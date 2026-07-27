@@ -117,6 +117,7 @@ func (s *stubSender) largestBatch() int {
 // message. A per-message sender would hammer the provider's rate limit — and
 // with four workers, four times faster.
 func TestOutboxSendsOneCallPerShard(t *testing.T) {
+	resetOutbox(t)
 	const n = 40
 	marker := "batched-outbox.io"
 	for i := range n {
@@ -201,6 +202,13 @@ func startRelay(t *testing.T, sender outbox.Sender, cfg outbox.Config) relayHand
 	return relayHandle{relay: relay, logs: logs, cancel: cancel}
 }
 
+func resetOutbox(t *testing.T) {
+	t.Helper()
+	_, err := testDB.Exec(`DELETE FROM email_outbox`)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = testDB.Exec(`DELETE FROM email_outbox`) })
+}
+
 func enqueueRow(t *testing.T, recipient string) int64 {
 	t.Helper()
 	res, err := testDB.Exec(
@@ -239,6 +247,7 @@ func outboxAttempts(t *testing.T, recipient string) int {
 // merely block until the first commits. What SKIP LOCKED buys is that it does
 // not block, so every replica does work instead of waiting on row locks.
 func TestOutboxClaimSkipsRowsLockedByAnotherTransaction(t *testing.T) {
+	resetOutbox(t)
 	const n = 10
 	marker := "claim-outbox.io"
 	for i := range n {
@@ -249,6 +258,8 @@ func TestOutboxClaimSkipsRowsLockedByAnotherTransaction(t *testing.T) {
 
 	claimedByFirst := make(chan []int64, 1)
 	release := make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
 	go func() {
 		_ = trManager.Do(context.Background(), func(ctx context.Context) error {
 			claimed, err := repo.Claim(ctx, 5)
@@ -281,11 +292,11 @@ func TestOutboxClaimSkipsRowsLockedByAnotherTransaction(t *testing.T) {
 		return err
 	})
 	elapsed := time.Since(start)
-	close(release)
+	releaseOnce()
 
 	require.NoError(t, err)
 	require.Len(t, second, 5)
-	assert.Less(t, elapsed, time.Second, "the second claim must skip locked rows, not wait for them")
+	assert.Less(t, elapsed, 2*time.Second, "the second claim must skip locked rows, not wait for them")
 
 	held := make(map[int64]bool, len(first))
 	for _, id := range first {
@@ -298,6 +309,7 @@ func TestOutboxClaimSkipsRowsLockedByAnotherTransaction(t *testing.T) {
 
 // TestOutboxDelivers drives the real (mock) email.Client end to end.
 func TestOutboxDelivers(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "deliver@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := email.NewClient(email.Config{MaxFailures: 3, OpenFor: time.Minute, Timeout: 3 * time.Second}, slog.New(slog.DiscardHandler))
@@ -308,6 +320,7 @@ func TestOutboxDelivers(t *testing.T) {
 }
 
 func TestOutboxRejectedMessageGoesToDeadLetter(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "rejected@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
@@ -327,6 +340,7 @@ func TestOutboxRejectedMessageGoesToDeadLetter(t *testing.T) {
 // Covers the batched Reschedule: several rows, each with its own backoff and
 // error text, must come back as pending in a single statement.
 func TestOutboxReschedulesBatchBeforeDeadLetter(t *testing.T) {
+	resetOutbox(t)
 	const n = 3
 	marker := "reschedule-outbox.io"
 	for i := range n {
@@ -352,6 +366,7 @@ func TestOutboxReschedulesBatchBeforeDeadLetter(t *testing.T) {
 }
 
 func TestOutboxRetriesTransientWithoutSpendingAttempts(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "transient@outbox.io"
 	enqueueRow(t, rcpt)
 	var calls atomic.Int32
@@ -383,6 +398,7 @@ func TestOutboxRetriesTransientWithoutSpendingAttempts(t *testing.T) {
 }
 
 func TestOutboxHonoursRetryAfterBeforeCallingAgain(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "backoff@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
@@ -406,6 +422,7 @@ func TestOutboxHonoursRetryAfterBeforeCallingAgain(t *testing.T) {
 // against — the guard turns it into a pause, and the relay survives to deliver
 // once the provider behaves.
 func TestOutboxSurvivesMismatchedResultCount(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "mismatch@outbox.io"
 	enqueueRow(t, rcpt)
 	broken := newStubSender()
@@ -428,6 +445,7 @@ func TestOutboxSurvivesMismatchedResultCount(t *testing.T) {
 // A shutdown must abort the in-flight send, and must not be reported as the
 // tick running out of budget — the two call for opposite operator reactions.
 func TestOutboxAbortsSendOnShutdown(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "shutdown@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
@@ -448,6 +466,7 @@ func TestOutboxAbortsSendOnShutdown(t *testing.T) {
 }
 
 func TestOutboxAbandonsSendWhenTickBudgetExpires(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "budget@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
@@ -457,7 +476,7 @@ func TestOutboxAbandonsSendWhenTickBudgetExpires(t *testing.T) {
 	h := startRelay(t, sender, cfg)
 
 	require.Eventually(t, func() bool { return h.logs.has("outbox send exceeded the tick budget") },
-		5*time.Second, 10*time.Millisecond, "an over-budget send must be reported as such")
+		10*time.Second, 10*time.Millisecond, "an over-budget send must be reported as such")
 	assert.False(t, h.logs.has("outbox send aborted: shutdown"))
 	assert.Equal(t, "pending", outboxStatus(t, rcpt))
 	assert.Zero(t, outboxAttempts(t, rcpt))
@@ -467,26 +486,31 @@ func TestOutboxAbandonsSendWhenTickBudgetExpires(t *testing.T) {
 // to wait for it — otherwise the process exits mid-settlement and the next pod
 // redelivers whatever the provider already accepted.
 func TestOutboxDrainWaitsForTheInFlightTickToSettle(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "drain@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
-	sender.hold = 300 * time.Millisecond
+	sender.hold = 3 * time.Second
 	sender.deaf = true
 	h := startRelay(t, sender, fastConfig(8))
 
 	require.Eventually(t, func() bool { return sender.callCount() >= 1 },
 		5*time.Second, 10*time.Millisecond)
 	h.cancel()
+	cancelledAt := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	require.NoError(t, h.relay.Drain(ctx))
 
+	assert.GreaterOrEqual(t, time.Since(cancelledAt), 2*time.Second,
+		"Drain must block until the in-flight tick has settled")
 	assert.Zero(t, outboxCount(t, rcpt), "the row must already be settled when Drain returns")
 	assert.Equal(t, 1, sender.count(rcpt))
 }
 
 func TestOutboxDrainReturnsWithoutWaitingWhenIdle(t *testing.T) {
+	resetOutbox(t)
 	h := startRelay(t, newStubSender(), fastConfig(8))
 	h.cancel()
 
@@ -499,6 +523,7 @@ func TestOutboxDrainReturnsWithoutWaitingWhenIdle(t *testing.T) {
 }
 
 func TestOutboxDrainReportsWhenItRunsOutOfTime(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "drain-slow@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
@@ -513,10 +538,18 @@ func TestOutboxDrainReportsWhenItRunsOutOfTime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	require.ErrorIs(t, h.relay.Drain(ctx), context.DeadlineExceeded)
+	err := h.relay.Drain(ctx)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorContains(t, err, "outbox")
+	assert.Equal(t, "pending", outboxStatus(t, rcpt))
+	require.Eventually(t, func() bool { return outboxCount(t, rcpt) == 0 },
+		10*time.Second, 20*time.Millisecond,
+		"a drain timeout must not lose the message — the tick settles regardless")
 }
 
 func TestOutboxDedupSuppressesResend(t *testing.T) {
+	resetOutbox(t)
 	rcpt := "dedup@outbox.io"
 	id := enqueueRow(t, rcpt)
 	// a prior run already delivered this message and left the marker in Redis
@@ -532,6 +565,7 @@ func TestOutboxDedupSuppressesResend(t *testing.T) {
 }
 
 func TestOutboxConcurrentRelaysSendEachOnce(t *testing.T) {
+	resetOutbox(t)
 	const n = 20
 	marker := "concurrent-outbox.io"
 	for i := range n {

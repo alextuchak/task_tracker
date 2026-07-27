@@ -28,6 +28,8 @@ type Repo interface {
 	OldestPendingAge(ctx context.Context) (time.Duration, error)
 }
 
+// Sender must return promptly once ctx is done: the settle window, and the
+// config check built on it, assume a tick cannot outlive its send budget.
 type Sender interface {
 	SendBatch(ctx context.Context, msgs []Message) ([]SendResult, error)
 }
@@ -67,6 +69,7 @@ type Relay struct {
 	paused atomic.Int64
 }
 
+// Run may be called once per Relay: it closes the channel Drain waits on.
 func (r *Relay) Run(ctx context.Context) {
 	defer close(r.done)
 	ticker := time.NewTicker(r.cfg.Tick)
@@ -97,7 +100,7 @@ func (r *Relay) Drain(ctx context.Context) error {
 }
 
 func (r *Relay) tick(parent context.Context) {
-	txCtx, cancelTx := context.WithTimeout(context.WithoutCancel(parent), r.cfg.Budget+settleGrace)
+	txCtx, cancelTx := context.WithTimeout(context.WithoutCancel(parent), r.cfg.SettleWindow())
 	defer cancelTx()
 	sendCtx, cancelSend := context.WithTimeout(parent, r.cfg.Budget)
 	defer cancelSend()
@@ -134,7 +137,7 @@ func (r *Relay) tick(parent context.Context) {
 			slog.Int("delivered_before_failure", s.delivered),
 			slog.Int("to_reschedule", len(s.reschedule)),
 			slog.Int("to_fail", len(s.fail)),
-			slog.Bool("redelivery_expected", s.delivered > 0),
+			slog.Bool("rows_will_be_reclaimed", s.delivered > 0),
 			slog.Any("error", err))
 		return
 	}
@@ -203,6 +206,10 @@ func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel contex
 
 	results, err := r.sender.SendBatch(ctx, msgs)
 	if err != nil {
+		var hint retryAfter
+		if errors.As(err, &hint) {
+			out.pause = hint.RetryAfterHint()
+		}
 		switch {
 		case errors.Is(context.Cause(ctx), errPaused):
 			sendErrorsTotal.WithLabelValues("paused").Inc()
@@ -211,15 +218,13 @@ func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel contex
 		case errors.Is(err, context.Canceled):
 			sendErrorsTotal.WithLabelValues("shutdown").Inc()
 			r.log.Info("outbox send aborted: shutdown", slog.Int("deferred", len(msgs)))
+			cancel(errPaused)
+			return out
 		case errors.Is(err, context.DeadlineExceeded):
 			sendErrorsTotal.WithLabelValues("budget").Inc()
 			r.log.Warn("outbox send exceeded the tick budget",
 				slog.Int("deferred", len(msgs)), slog.Any("error", err))
 		default:
-			var hint retryAfter
-			if errors.As(err, &hint) {
-				out.pause = hint.RetryAfterHint()
-			}
 			sendErrorsTotal.WithLabelValues("provider").Inc()
 			r.log.Error("outbox batch send failed",
 				slog.Int("deferred", len(msgs)),

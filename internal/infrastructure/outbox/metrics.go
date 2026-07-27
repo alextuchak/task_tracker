@@ -8,7 +8,7 @@ import (
 var (
 	sentTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "outbox_sent_total",
-		Help: "Emails delivered by the outbox relay",
+		Help: "Emails delivered and settled; deliveries lost to a failed settlement are counted in outbox_tick_errors_total instead",
 	})
 	failedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "outbox_failed_total",
@@ -24,6 +24,6 @@ var (
 	}, []string{"reason"})
 	tickErrorsTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "outbox_tick_errors_total",
-		Help: "Ticks whose transaction failed; a non-zero delivered count means those emails will be redelivered",
+		Help: "Ticks whose transaction failed, leaving already-delivered rows to be reclaimed; the dedup layer suppresses the resend unless it is also down",
 	})
 )
