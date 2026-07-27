@@ -11,28 +11,23 @@ import (
 	"task_tracker/internal/domain"
 	"time"
 
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
 	mysqldrv "github.com/go-sql-driver/mysql"
 )
 
-func NewTaskRepo(db *sql.DB) *TaskRepo {
-	return &TaskRepo{db: db}
+func NewTaskRepo(db *sql.DB, getter *trmsql.CtxGetter) *TaskRepo {
+	return &TaskRepo{db: db, getter: getter}
 }
 
 type TaskRepo struct {
-	db *sql.DB
+	db     *sql.DB
+	getter *trmsql.CtxGetter
 }
 
-const taskColumns = `id, team_id, title, description, status, assignee_id,
-	created_by, created_at, updated_at, completed_at`
-
 func (r *TaskRepo) Create(ctx context.Context, t domain.Task) (int64, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
+	conn := r.getter.DefaultTrOrDB(ctx, r.db)
 
-	res, err := tx.ExecContext(ctx,
+	res, err := conn.ExecContext(ctx,
 		`INSERT INTO tasks (team_id, title, description, status, assignee_id, created_by)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		t.TeamID, t.Title, t.Description, t.Status, t.AssigneeID, t.CreatedBy)
@@ -47,25 +42,44 @@ func (r *TaskRepo) Create(ctx context.Context, t domain.Task) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("last insert id: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := conn.ExecContext(ctx,
 		`INSERT INTO task_history (task_id, changed_by, change_group_id, field, old_value, new_value)
 		 VALUES (?, ?, ?, ?, NULL, NULL)`,
 		id, t.CreatedBy, newChangeGroupID(), domain.ChangeFieldCreated); err != nil {
 		return 0, fmt.Errorf("insert created event: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit: %w", err)
-	}
 	return id, nil
 }
 
 func (r *TaskRepo) ByID(ctx context.Context, id int64) (domain.Task, error) {
-	return scanTask(r.db.QueryRowContext(ctx,
-		`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, id))
+	var (
+		t           domain.Task
+		description sql.NullString
+		assigneeID  sql.NullInt64
+		completedAt sql.NullTime
+	)
+	err := r.getter.DefaultTrOrDB(ctx, r.db).QueryRowContext(ctx,
+		`SELECT id, team_id, title, description, status, assignee_id,
+		        created_by, created_at, updated_at, completed_at
+		   FROM tasks WHERE id = ?`, id).
+		Scan(&t.ID, &t.TeamID, &t.Title, &description, &t.Status, &assigneeID,
+			&t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &completedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Task{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.Task{}, fmt.Errorf("scan task: %w", err)
+	}
+	t.Description = description.String
+	if assigneeID.Valid {
+		t.AssigneeID = &assigneeID.Int64
+	}
+	if completedAt.Valid {
+		t.CompletedAt = &completedAt.Time
+	}
+	return t, nil
 }
 
-// FORCE INDEX: on cursor+LIMIT queries the MySQL optimizer falls back to a
-// PRIMARY scan (~40k rows per page instead of 20), verified with EXPLAIN ANALYZE on 3M rows
 func (r *TaskRepo) List(ctx context.Context, f domain.TaskFilter) ([]domain.Task, error) {
 	hint := ""
 	switch {
@@ -75,7 +89,9 @@ func (r *TaskRepo) List(ctx context.Context, f domain.TaskFilter) ([]domain.Task
 	default:
 		hint = ` FORCE INDEX (idx_tasks_team_id)`
 	}
-	query := `SELECT ` + taskColumns + ` FROM tasks` + hint + ` WHERE team_id = ?`
+	query := `SELECT id, team_id, title, description, status, assignee_id,
+	                 created_by, created_at, updated_at, completed_at
+	            FROM tasks` + hint + ` WHERE team_id = ?`
 	args := []any{f.TeamID}
 	if f.Status != nil {
 		query += ` AND status = ?`
@@ -92,7 +108,7 @@ func (r *TaskRepo) List(ctx context.Context, f domain.TaskFilter) ([]domain.Task
 	query += ` ORDER BY id LIMIT ?`
 	args = append(args, f.Limit)
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := r.getter.DefaultTrOrDB(ctx, r.db).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("select tasks: %w", err)
 	}
@@ -100,9 +116,22 @@ func (r *TaskRepo) List(ctx context.Context, f domain.TaskFilter) ([]domain.Task
 
 	tasks := make([]domain.Task, 0)
 	for rows.Next() {
-		t, err := scanTask(rows)
-		if err != nil {
-			return nil, err
+		var (
+			t           domain.Task
+			description sql.NullString
+			assigneeID  sql.NullInt64
+			completedAt sql.NullTime
+		)
+		if err := rows.Scan(&t.ID, &t.TeamID, &t.Title, &description, &t.Status, &assigneeID,
+			&t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &completedAt); err != nil {
+			return nil, fmt.Errorf("scan task: %w", err)
+		}
+		t.Description = description.String
+		if assigneeID.Valid {
+			t.AssigneeID = &assigneeID.Int64
+		}
+		if completedAt.Valid {
+			t.CompletedAt = &completedAt.Time
 		}
 		tasks = append(tasks, t)
 	}
@@ -112,18 +141,30 @@ func (r *TaskRepo) List(ctx context.Context, f domain.TaskFilter) ([]domain.Task
 	return tasks, nil
 }
 
-// history rows go in the same tx as the update, so the audit cannot drift
 func (r *TaskRepo) Update(ctx context.Context, actorID int64, t domain.Task) (domain.Task, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Task{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
+	conn := r.getter.DefaultTrOrDB(ctx, r.db)
 
-	old, err := scanTask(tx.QueryRowContext(ctx,
-		`SELECT `+taskColumns+` FROM tasks WHERE id = ? FOR UPDATE`, t.ID))
-	if err != nil {
-		return domain.Task{}, err
+	var (
+		old          domain.Task
+		oldDesc      sql.NullString
+		oldAssignee  sql.NullInt64
+		oldCompleted sql.NullTime
+	)
+	switch err := conn.QueryRowContext(ctx,
+		`SELECT title, description, status, assignee_id, completed_at
+		   FROM tasks WHERE id = ? FOR UPDATE`, t.ID).
+		Scan(&old.Title, &oldDesc, &old.Status, &oldAssignee, &oldCompleted); {
+	case errors.Is(err, sql.ErrNoRows):
+		return domain.Task{}, domain.ErrNotFound
+	case err != nil:
+		return domain.Task{}, fmt.Errorf("lock task: %w", err)
+	}
+	old.Description = oldDesc.String
+	if oldAssignee.Valid {
+		old.AssigneeID = &oldAssignee.Int64
+	}
+	if oldCompleted.Valid {
+		old.CompletedAt = &oldCompleted.Time
 	}
 
 	var completedAt *time.Time
@@ -134,16 +175,22 @@ func (r *TaskRepo) Update(ctx context.Context, actorID int64, t domain.Task) (do
 		now := time.Now()
 		completedAt = &now
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := conn.ExecContext(ctx,
 		`UPDATE tasks SET title=?, description=?, status=?, assignee_id=?, completed_at=?
 		 WHERE id=?`,
 		t.Title, t.Description, t.Status, t.AssigneeID, completedAt, t.ID); err != nil {
 		return domain.Task{}, fmt.Errorf("update task: %w", err)
 	}
 
+	changes := make([]domain.TaskChange, 0, 4)
+	changes = addChange(changes, "title", old.Title, t.Title)
+	changes = addChange(changes, "description", old.Description, t.Description)
+	changes = addChange(changes, "status", string(old.Status), string(t.Status))
+	changes = addChange(changes, "assignee_id", formatID(old.AssigneeID), formatID(t.AssigneeID))
+
 	groupID := newChangeGroupID()
-	for _, ch := range diffTask(old, t) {
-		if _, err := tx.ExecContext(ctx,
+	for _, ch := range changes {
+		if _, err := conn.ExecContext(ctx,
 			`INSERT INTO task_history (task_id, changed_by, change_group_id, field, old_value, new_value)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
 			t.ID, actorID, groupID, ch.Field, ch.OldValue, ch.NewValue); err != nil {
@@ -151,19 +198,33 @@ func (r *TaskRepo) Update(ctx context.Context, actorID int64, t domain.Task) (do
 		}
 	}
 
-	updated, err := scanTask(tx.QueryRowContext(ctx,
-		`SELECT `+taskColumns+` FROM tasks WHERE id = ?`, t.ID))
-	if err != nil {
-		return domain.Task{}, err
+	var (
+		updated     domain.Task
+		newDesc     sql.NullString
+		newAssignee sql.NullInt64
+		newDone     sql.NullTime
+	)
+	if err := conn.QueryRowContext(ctx,
+		`SELECT id, team_id, title, description, status, assignee_id,
+		        created_by, created_at, updated_at, completed_at
+		   FROM tasks WHERE id = ?`, t.ID).
+		Scan(&updated.ID, &updated.TeamID, &updated.Title, &newDesc, &updated.Status,
+			&newAssignee, &updated.CreatedBy, &updated.CreatedAt, &updated.UpdatedAt,
+			&newDone); err != nil {
+		return domain.Task{}, fmt.Errorf("scan updated task: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return domain.Task{}, fmt.Errorf("commit: %w", err)
+	updated.Description = newDesc.String
+	if newAssignee.Valid {
+		updated.AssigneeID = &newAssignee.Int64
+	}
+	if newDone.Valid {
+		updated.CompletedAt = &newDone.Time
 	}
 	return updated, nil
 }
 
 func (r *TaskRepo) History(ctx context.Context, taskID int64) ([]domain.TaskChange, error) {
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := r.getter.DefaultTrOrDB(ctx, r.db).QueryContext(ctx,
 		`SELECT change_group_id, field, old_value, new_value, changed_by, changed_at
 		 FROM task_history WHERE task_id = ? ORDER BY id`, taskID)
 	if err != nil {
@@ -190,18 +251,12 @@ func (r *TaskRepo) History(ctx context.Context, taskID int64) ([]domain.TaskChan
 	return changes, nil
 }
 
-func diffTask(old, upd domain.Task) []domain.TaskChange {
-	var changes []domain.TaskChange
-	add := func(field, oldV, newV string) {
-		if oldV != newV {
-			changes = append(changes, domain.TaskChange{Field: field, OldValue: oldV, NewValue: newV})
-		}
+// addChange appends a history row only when the field actually moved.
+func addChange(changes []domain.TaskChange, field, oldV, newV string) []domain.TaskChange {
+	if oldV == newV {
+		return changes
 	}
-	add("title", old.Title, upd.Title)
-	add("description", old.Description, upd.Description)
-	add("status", string(old.Status), string(upd.Status))
-	add("assignee_id", formatID(old.AssigneeID), formatID(upd.AssigneeID))
-	return changes
+	return append(changes, domain.TaskChange{Field: field, OldValue: oldV, NewValue: newV})
 }
 
 func newChangeGroupID() string {
@@ -215,33 +270,4 @@ func formatID(id *int64) string {
 		return ""
 	}
 	return strconv.FormatInt(*id, 10)
-}
-
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanTask(row rowScanner) (domain.Task, error) {
-	var (
-		t           domain.Task
-		description sql.NullString
-		assigneeID  sql.NullInt64
-		completedAt sql.NullTime
-	)
-	err := row.Scan(&t.ID, &t.TeamID, &t.Title, &description, &t.Status, &assigneeID,
-		&t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &completedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Task{}, domain.ErrNotFound
-	}
-	if err != nil {
-		return domain.Task{}, fmt.Errorf("scan task: %w", err)
-	}
-	t.Description = description.String
-	if assigneeID.Valid {
-		t.AssigneeID = &assigneeID.Int64
-	}
-	if completedAt.Valid {
-		t.CompletedAt = &completedAt.Time
-	}
-	return t, nil
 }

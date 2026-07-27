@@ -32,9 +32,6 @@ func (r *OutboxRepo) Enqueue(ctx context.Context, msg outbox.Message) error {
 	return nil
 }
 
-// Claim runs inside the caller's transaction and takes no marker: the row locks
-// themselves reserve the batch and hold until that transaction commits. A crash
-// rolls them back, so nothing can stay stuck in flight.
 func (r *OutboxRepo) Claim(ctx context.Context, batch int) ([]outbox.Claimed, error) {
 	conn := r.getter.DefaultTrOrDB(ctx, r.db)
 
@@ -80,8 +77,6 @@ func (r *OutboxRepo) Delete(ctx context.Context, ids []int64) error {
 	return nil
 }
 
-// Reschedule rewrites the whole batch in one statement: per-row delays and
-// errors ride in CASE arms, so a claim of 100 costs one round trip, not 100.
 func (r *OutboxRepo) Reschedule(ctx context.Context, items []outbox.Retry) error {
 	if len(items) == 0 {
 		return nil

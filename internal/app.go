@@ -52,15 +52,16 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	trManager := manager.Must(trmsql.NewDefaultFactory(db))
 
 	idp := identity.NewProvider(cfg.Auth)
-	userRepo := persistence.NewUserRepo(db)
+	userRepo := persistence.NewUserRepo(db, getter)
 	authService := service.NewAuth(userRepo, idp)
 	teamRepo := persistence.NewTeamRepo(db, getter)
 	outboxRepo := persistence.NewOutboxRepo(db, getter)
 	authz := service.NewAuthorizer(userRepo, teamRepo)
 	teamsService := service.NewTeams(teamRepo, userRepo, outboxRepo, trManager, authz)
 	tasksCache := cache.NewTasks(rdb, cfg.Redis.TasksTTL, log)
-	tasksService := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
-	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
+	tasksService := service.NewTasks(
+		persistence.NewTaskRepo(db, getter), teamRepo, tasksCache, trManager, authz)
+	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db, getter), authz)
 	userLimiter := ratelimit.New(rdb, cfg.RateLimit, log)
 	ipLimiter := ratelimit.New(rdb, cfg.RateLimitPublic, log)
 

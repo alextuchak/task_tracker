@@ -10,6 +10,8 @@ import (
 	"task_tracker/internal/infrastructure/persistence"
 	"task_tracker/internal/service"
 	"time"
+
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
 )
 
 const usage = `usage: cli <command> [flags]
@@ -70,6 +72,6 @@ func buildAuthService() (*service.Auth, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("mysql: %w", err)
 	}
-	svc := service.NewAuth(persistence.NewUserRepo(db), identity.NewProvider(cfg.Auth))
+	svc := service.NewAuth(persistence.NewUserRepo(db, trmsql.DefaultCtxGetter), identity.NewProvider(cfg.Auth))
 	return svc, func() { _ = db.Close() }, nil
 }

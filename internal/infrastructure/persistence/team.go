@@ -22,8 +22,6 @@ type TeamRepo struct {
 	getter *trmsql.CtxGetter
 }
 
-// Create inserts the team row only; the service wraps it and AddMember in one
-// transaction so the creator's ownership is written atomically.
 func (r *TeamRepo) Create(ctx context.Context, name string, creatorID int64) (int64, error) {
 	conn := r.getter.DefaultTrOrDB(ctx, r.db)
 	res, err := conn.ExecContext(ctx,
