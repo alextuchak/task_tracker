@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -44,7 +43,8 @@ func listTasks(t *testing.T, bearer, query string) taskPage {
 }
 
 func TestCreateTaskByMember(t *testing.T) {
-	owner := registerAndLogin(t, "t-create@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-create"))
 	teamID := createTeam(t, owner, "t-create")
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/tasks", owner,
@@ -59,8 +59,9 @@ func TestCreateTaskByMember(t *testing.T) {
 }
 
 func TestCreateTaskByOutsiderMasked(t *testing.T) {
-	owner := registerAndLogin(t, "t-out-owner@tasks.io")
-	outsider := registerAndLogin(t, "t-outsider@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-out-owner"))
+	outsider := registerAndLogin(t, mail("t-outsider"))
 	teamID := createTeam(t, owner, "t-out")
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/tasks", outsider,
@@ -70,11 +71,13 @@ func TestCreateTaskByOutsiderMasked(t *testing.T) {
 }
 
 func TestCreateTaskAssigneeMustBeMember(t *testing.T) {
-	owner := registerAndLogin(t, "t-asg-owner@tasks.io")
-	registerAndLogin(t, "t-asg-stranger@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-asg-owner"))
+	strangerEmail := mail("t-asg-stranger")
+	registerAndLogin(t, strangerEmail)
 	teamID := createTeam(t, owner, "t-asg")
 
-	strangerID := meID(t, login(t, "t-asg-stranger@tasks.io", "password123"))
+	strangerID := meID(t, login(t, strangerEmail, "password123"))
 	resp := doJSON(t, http.MethodPost, "/api/v1/tasks", owner,
 		fmt.Sprintf(`{"team_id":%d,"title":"x","assignee_id":%d}`, teamID, strangerID))
 
@@ -82,7 +85,8 @@ func TestCreateTaskAssigneeMustBeMember(t *testing.T) {
 }
 
 func TestListFiltersAndPagination(t *testing.T) {
-	owner := registerAndLogin(t, "t-list@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-list"))
 	teamID := createTeam(t, owner, "t-list")
 	ownerID := meID(t, owner)
 
@@ -115,8 +119,9 @@ func TestListFiltersAndPagination(t *testing.T) {
 }
 
 func TestListByNonMemberMasked(t *testing.T) {
-	owner := registerAndLogin(t, "t-lnm-owner@tasks.io")
-	outsider := registerAndLogin(t, "t-lnm-out@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-lnm-owner"))
+	outsider := registerAndLogin(t, mail("t-lnm-out"))
 	teamID := createTeam(t, owner, "t-lnm")
 
 	resp := doJSON(t, http.MethodGet, fmt.Sprintf("/api/v1/tasks?team_id=%d", teamID), outsider, "")
@@ -125,7 +130,8 @@ func TestListByNonMemberMasked(t *testing.T) {
 }
 
 func TestUpdateWritesHistoryAndCompletedAt(t *testing.T) {
-	owner := registerAndLogin(t, "t-hist@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-hist"))
 	teamID := createTeam(t, owner, "t-hist")
 	task := createTask(t, owner, teamID, "old title")
 
@@ -164,8 +170,9 @@ func TestUpdateWritesHistoryAndCompletedAt(t *testing.T) {
 }
 
 func TestUpdateByOutsiderMasked(t *testing.T) {
-	owner := registerAndLogin(t, "t-upd-owner@tasks.io")
-	outsider := registerAndLogin(t, "t-upd-out@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-upd-owner"))
+	outsider := registerAndLogin(t, mail("t-upd-out"))
 	teamID := createTeam(t, owner, "t-upd")
 	task := createTask(t, owner, teamID, "task")
 
@@ -176,8 +183,9 @@ func TestUpdateByOutsiderMasked(t *testing.T) {
 }
 
 func TestHistoryByOutsiderMasked(t *testing.T) {
-	owner := registerAndLogin(t, "t-ho-owner@tasks.io")
-	outsider := registerAndLogin(t, "t-ho-out@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-ho-owner"))
+	outsider := registerAndLogin(t, mail("t-ho-out"))
 	teamID := createTeam(t, owner, "t-ho")
 	task := createTask(t, owner, teamID, "task")
 
@@ -187,13 +195,12 @@ func TestHistoryByOutsiderMasked(t *testing.T) {
 }
 
 func TestGlobalAdminUpdatesForeignTask(t *testing.T) {
-	owner := registerAndLogin(t, "t-ga-owner@tasks.io")
-	registerAndLogin(t, "t-ga-admin@tasks.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-ga-owner"))
 	teamID := createTeam(t, owner, "t-ga")
 	task := createTask(t, owner, teamID, "task")
-	require.NoError(t, authSvc.GrantAdmin(context.Background(), "t-ga-admin@tasks.io"))
 
-	admin := login(t, "t-ga-admin@tasks.io", "password123")
+	admin := makeAdmin(t, mail("t-ga-admin"))
 	resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/v1/tasks/%d", task.ID), admin,
 		`{"title":"task","status":"in_progress"}`)
 
@@ -201,7 +208,8 @@ func TestGlobalAdminUpdatesForeignTask(t *testing.T) {
 }
 
 func TestUpdateUnknownTask(t *testing.T) {
-	bearer := registerAndLogin(t, "t-unk@tasks.io")
+	t.Parallel()
+	bearer := registerAndLogin(t, mail("t-unk"))
 
 	resp := doJSON(t, http.MethodPut, "/api/v1/tasks/999999", bearer,
 		`{"title":"x","status":"todo"}`)

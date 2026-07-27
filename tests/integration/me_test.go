@@ -35,8 +35,10 @@ func userID(t *testing.T, bearer string) int64 {
 }
 
 func TestMeReturnsCurrentUser(t *testing.T) {
-	register(t, "me@test.io", "Ada", "password123")
-	bearer := login(t, "me@test.io", "password123")
+	t.Parallel()
+	email := mail("me")
+	register(t, email, "Ada", "password123")
+	bearer := login(t, email, "password123")
 
 	resp := doJSON(t, http.MethodGet, "/api/v1/me", bearer, "")
 
@@ -48,24 +50,26 @@ func TestMeReturnsCurrentUser(t *testing.T) {
 	}
 	decodeJSON(t, readBody(t, resp), &got)
 	assert.Positive(t, got.ID)
-	assert.Equal(t, "me@test.io", got.Email)
+	assert.Equal(t, email, got.Email)
 	assert.Equal(t, "Ada", got.Name)
 }
 
 func TestMeWithoutToken(t *testing.T) {
+	t.Parallel()
 	resp := doJSON(t, http.MethodGet, "/api/v1/me", "", "")
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 func TestMeGarbageToken(t *testing.T) {
+	t.Parallel()
 	resp := doJSON(t, http.MethodGet, "/api/v1/me", "garbage", "")
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 func TestMeExpiredToken(t *testing.T) {
-	register(t, "expired@test.io", "Ada", "password123")
+	t.Parallel()
 	expiredIdp := identity.NewProvider(identity.Config{Secret: strings.Repeat("s", 32), TTL: -time.Minute})
 	bearer, err := expiredIdp.Issue(1)
 	require.NoError(t, err)
@@ -76,6 +80,7 @@ func TestMeExpiredToken(t *testing.T) {
 }
 
 func TestMeForeignSignature(t *testing.T) {
+	t.Parallel()
 	foreignIdp := identity.NewProvider(identity.Config{Secret: strings.Repeat("x", 32), TTL: time.Hour})
 	bearer, err := foreignIdp.Issue(1)
 	require.NoError(t, err)

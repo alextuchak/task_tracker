@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
 	"task_tracker/internal/infrastructure/health"
@@ -97,7 +98,7 @@ func run(m *testing.M) (int, error) {
 	}
 
 	db, err := persistence.NewMySQL(persistence.Config{
-		DSN: dsn, MaxOpenConns: 5, MaxIdleConns: 5, ConnMaxLifetime: time.Minute,
+		DSN: dsn, MaxOpenConns: 25, MaxIdleConns: 25, ConnMaxLifetime: time.Minute,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("mysql pool: %w", err)
@@ -111,7 +112,9 @@ func run(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("migrations: %w", err)
 	}
 
-	rdb := cache.NewRedis(cache.Config{Addr: redisAddr})
+	rdb := cache.NewRedis(cache.Config{
+		Addr: redisAddr, DialTimeout: time.Second, MaxRetries: 1, DialerRetries: 1,
+	})
 	defer func() { _ = rdb.Close() }()
 	testRedis = rdb
 
@@ -144,15 +147,35 @@ func run(m *testing.M) (int, error) {
 	return m.Run(), nil
 }
 
+var testClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
+var seq atomic.Int64
+
+// mail builds an address unique for the whole test binary, including repeated
+// iterations under -count. The role stays in the address so a failing
+// assertion still names the actor.
+func mail(role string) string {
+	return fmt.Sprintf("%s-%d@test.io", role, seq.Add(1))
+}
+
 func doJSON(t *testing.T, method, path, bearer, body string) *http.Response {
 	t.Helper()
-	req, err := http.NewRequestWithContext(context.Background(), method, baseURL+path, strings.NewReader(body))
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	t.Cleanup(cancel)
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, strings.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 	return resp

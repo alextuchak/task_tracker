@@ -9,8 +9,9 @@ import (
 )
 
 func TestRateLimitKicksInPerUser(t *testing.T) {
-	hammer := registerAndLogin(t, "hammer@rate.io")
-	calm := registerAndLogin(t, "calm@rate.io")
+	t.Parallel()
+	hammer := registerAndLogin(t, mail("hammer"))
+	calm := registerAndLogin(t, mail("calm"))
 
 	var limited *http.Response
 	for i := 0; i < 160; i++ {

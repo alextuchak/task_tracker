@@ -35,11 +35,11 @@ type Config struct {
 	AppVersion      string                  `env:"APP_VERSION" env-default:"dev"`
 	Env             string                  `env:"ENV" env-default:"local"`
 	Auth            identity.Config         `yaml:"auth"`
-	Redis           cache.Config            `yaml:"redis"`
-	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
 	MySQL           persistence.Config      `yaml:"mysql"`
+	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
 	RateLimit       ratelimit.Config        `yaml:"rate_limit"`
 	HTTP            HTTPConfig              `yaml:"http"`
+	Redis           cache.Config            `yaml:"redis"`
 	Outbox          outbox.Config           `yaml:"outbox"`
 	Email           email.Config            `yaml:"email"`
 	Shutdown        lifecycle.CloserConfig  `yaml:"shutdown"`

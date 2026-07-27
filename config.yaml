@@ -14,6 +14,9 @@ mysql:
   conn_max_lifetime: 5m
 
 redis:
+  dial_timeout: 1s
+  max_retries: 1
+  dialer_retries: 1
   addr: "redis:6379"
   db: 0
   tasks_ttl: 5m

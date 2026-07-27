@@ -10,7 +10,8 @@ import (
 )
 
 func TestTaskListServedFromCache(t *testing.T) {
-	owner := registerAndLogin(t, "cache-hit@cache.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("cache-hit"))
 	teamID := createTeam(t, owner, "cache-hit-team")
 	task := createTask(t, owner, teamID, "cached title")
 
@@ -26,7 +27,8 @@ func TestTaskListServedFromCache(t *testing.T) {
 }
 
 func TestTaskListCacheInvalidatedOnUpdate(t *testing.T) {
-	owner := registerAndLogin(t, "cache-inv@cache.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("cache-inv"))
 	teamID := createTeam(t, owner, "cache-inv-team")
 	task := createTask(t, owner, teamID, "before")
 	require.Len(t, listTasks(t, owner, fmt.Sprintf("team_id=%d", teamID)).Items, 1)
@@ -42,7 +44,8 @@ func TestTaskListCacheInvalidatedOnUpdate(t *testing.T) {
 }
 
 func TestTaskListCacheInvalidatedOnCreate(t *testing.T) {
-	owner := registerAndLogin(t, "cache-crt@cache.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("cache-crt"))
 	teamID := createTeam(t, owner, "cache-crt-team")
 	createTask(t, owner, teamID, "first")
 	require.Len(t, listTasks(t, owner, fmt.Sprintf("team_id=%d", teamID)).Items, 1)

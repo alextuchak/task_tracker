@@ -41,7 +41,25 @@ type stubSender struct {
 	// that does not thread the context would
 	deaf         bool
 	abortedByCtx bool
+	// entered is closed when a call arrives, gate blocks it there until the
+	// test lets go — a provider held mid-flight without guessing a duration
+	entered     chan struct{}
+	gate        chan struct{}
+	enterOnce   sync.Once
+	releaseOnce func()
 }
+
+// holdUntilReleased parks the provider inside a call until the test lets go.
+// Callers must `defer release()`: cleanups run in reverse order, so the relay's
+// own cleanup would wait on a parked send before any cleanup could free it —
+// a failed assertion would hang the run instead of reporting.
+func (s *stubSender) holdUntilReleased() {
+	s.entered = make(chan struct{})
+	s.gate = make(chan struct{})
+	s.releaseOnce = sync.OnceFunc(func() { close(s.gate) })
+}
+
+func (s *stubSender) release() { s.releaseOnce() }
 
 func newStubSender() *stubSender { return &stubSender{sent: map[string]int{}} }
 
@@ -49,8 +67,13 @@ func (s *stubSender) SendBatch(ctx context.Context, msgs []outbox.Message) ([]ou
 	s.mu.Lock()
 	s.calls++
 	s.maxBatch = max(s.maxBatch, len(msgs))
-	hold, deaf := s.hold, s.deaf
+	hold, deaf, gate := s.hold, s.deaf, s.gate
 	s.mu.Unlock()
+
+	if gate != nil {
+		s.enterOnce.Do(func() { close(s.entered) })
+		<-gate
+	}
 
 	switch {
 	case hold > 0 && deaf:
@@ -490,21 +513,26 @@ func TestOutboxDrainWaitsForTheInFlightTickToSettle(t *testing.T) {
 	rcpt := "drain@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
-	sender.hold = 3 * time.Second
-	sender.deaf = true
+	sender.holdUntilReleased()
+	defer sender.release()
 	h := startRelay(t, sender, fastConfig(8))
 
-	require.Eventually(t, func() bool { return sender.callCount() >= 1 },
-		5*time.Second, 10*time.Millisecond)
+	<-sender.entered
 	h.cancel()
-	cancelledAt := time.Now()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	require.NoError(t, h.relay.Drain(ctx))
+	drained := make(chan error, 1)
+	go func() { drained <- h.relay.Drain(ctx) }()
 
-	assert.GreaterOrEqual(t, time.Since(cancelledAt), 2*time.Second,
-		"Drain must block until the in-flight tick has settled")
+	select {
+	case <-drained:
+		t.Fatal("Drain returned while the tick was still mid-send")
+	case <-time.After(50 * time.Millisecond):
+	}
+	sender.release()
+
+	require.NoError(t, <-drained)
 	assert.Zero(t, outboxCount(t, rcpt), "the row must already be settled when Drain returns")
 	assert.Equal(t, 1, sender.count(rcpt))
 }
@@ -527,12 +555,11 @@ func TestOutboxDrainReportsWhenItRunsOutOfTime(t *testing.T) {
 	rcpt := "drain-slow@outbox.io"
 	enqueueRow(t, rcpt)
 	sender := newStubSender()
-	sender.hold = 2 * time.Second
-	sender.deaf = true
+	sender.holdUntilReleased()
+	defer sender.release()
 	h := startRelay(t, sender, fastConfig(8))
 
-	require.Eventually(t, func() bool { return sender.callCount() >= 1 },
-		5*time.Second, 10*time.Millisecond)
+	<-sender.entered
 	h.cancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -543,6 +570,9 @@ func TestOutboxDrainReportsWhenItRunsOutOfTime(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.ErrorContains(t, err, "outbox")
 	assert.Equal(t, "pending", outboxStatus(t, rcpt))
+
+	sender.release()
+
 	require.Eventually(t, func() bool { return outboxCount(t, rcpt) == 0 },
 		10*time.Second, 20*time.Millisecond,
 		"a drain timeout must not lose the message — the tick settles regardless")

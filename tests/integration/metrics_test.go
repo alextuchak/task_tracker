@@ -9,7 +9,8 @@ import (
 )
 
 func TestMetricsExposed(t *testing.T) {
-	register(t, "metrics@obs.io", "Ada", "password123")
+	t.Parallel()
+	register(t, mail("metrics"), "Ada", "password123")
 
 	resp := doJSON(t, http.MethodGet, "/metrics", "", "")
 

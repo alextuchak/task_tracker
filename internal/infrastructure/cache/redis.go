@@ -7,8 +7,11 @@ import (
 // NewRedis only builds the client; liveness is verified by the starter.
 func NewRedis(cfg Config) *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr:     cfg.Addr,
-		Password: cfg.Password,
-		DB:       cfg.DB,
+		Addr:          cfg.Addr,
+		Password:      cfg.Password,
+		DB:            cfg.DB,
+		DialTimeout:   cfg.DialTimeout,
+		MaxRetries:    cfg.MaxRetries,
+		DialerRetries: cfg.DialerRetries,
 	})
 }

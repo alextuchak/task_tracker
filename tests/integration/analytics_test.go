@@ -18,7 +18,8 @@ func makeAdmin(t *testing.T, email string) string {
 }
 
 func TestAnalyticsForbiddenForRegularUser(t *testing.T) {
-	user := registerAndLogin(t, "an-user@an.io")
+	t.Parallel()
+	user := registerAndLogin(t, mail("an-user"))
 
 	for _, path := range []string{
 		"/api/v1/analytics/teams",
@@ -31,11 +32,13 @@ func TestAnalyticsForbiddenForRegularUser(t *testing.T) {
 }
 
 func TestAnalyticsTeamStats(t *testing.T) {
-	owner := registerAndLogin(t, "an-ts-owner@an.io")
-	registerAndLogin(t, "an-ts-member@an.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("an-ts-owner"))
+	memberEmail := mail("an-ts-member")
+	registerAndLogin(t, memberEmail)
 	teamID := createTeam(t, owner, "an-ts-team")
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"an-ts-member@an.io"}`)
+		fmt.Sprintf(`{"email":%q}`, memberEmail))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	fresh := createTask(t, owner, teamID, "fresh-done")
@@ -52,7 +55,7 @@ func TestAnalyticsTeamStats(t *testing.T) {
 
 	createTask(t, owner, teamID, "still-todo")
 
-	admin := makeAdmin(t, "an-ts-admin@an.io")
+	admin := makeAdmin(t, mail("an-ts-admin"))
 	stats := fetchTeamStats(t, admin)
 
 	var found bool
@@ -68,17 +71,19 @@ func TestAnalyticsTeamStats(t *testing.T) {
 }
 
 func TestAnalyticsTopCreators(t *testing.T) {
-	owner := registerAndLogin(t, "an-tc-owner@an.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("an-tc-owner"))
 	teamID := createTeam(t, owner, "an-tc-team")
-	for _, email := range []string{"an-tc-u2@an.io", "an-tc-u3@an.io", "an-tc-u4@an.io"} {
+	u2Email, u3Email := mail("an-tc-u2"), mail("an-tc-u3")
+	for _, email := range []string{u2Email, u3Email, mail("an-tc-u4")} {
 		registerAndLogin(t, email)
 		resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
 			fmt.Sprintf(`{"email":%q}`, email))
 		require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	}
 
-	u2 := login(t, "an-tc-u2@an.io", "password123")
-	u3 := login(t, "an-tc-u3@an.io", "password123")
+	u2 := login(t, u2Email, "password123")
+	u3 := login(t, u3Email, "password123")
 	for i := 0; i < 3; i++ {
 		createTask(t, owner, teamID, fmt.Sprintf("owner-%d", i))
 	}
@@ -87,7 +92,7 @@ func TestAnalyticsTopCreators(t *testing.T) {
 	}
 	createTask(t, u3, teamID, "u3-0")
 
-	admin := makeAdmin(t, "an-tc-admin@an.io")
+	admin := makeAdmin(t, mail("an-tc-admin"))
 	creators := fetchTopCreators(t, admin)
 
 	var team []struct {
@@ -112,21 +117,23 @@ func TestAnalyticsTopCreators(t *testing.T) {
 }
 
 func TestAnalyticsOrphanAssignees(t *testing.T) {
-	owner := registerAndLogin(t, "an-or-owner@an.io")
-	registerAndLogin(t, "an-or-member@an.io")
+	t.Parallel()
+	owner := registerAndLogin(t, mail("an-or-owner"))
+	memberEmail := mail("an-or-member")
+	registerAndLogin(t, memberEmail)
 	teamID := createTeam(t, owner, "an-or-team")
 	resp := doJSON(t, http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", teamID), owner,
-		`{"email":"an-or-member@an.io"}`)
+		fmt.Sprintf(`{"email":%q}`, memberEmail))
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-	memberID := meID(t, login(t, "an-or-member@an.io", "password123"))
+	memberID := meID(t, login(t, memberEmail, "password123"))
 	resp = doJSON(t, http.MethodPost, "/api/v1/tasks", owner,
 		fmt.Sprintf(`{"team_id":%d,"title":"assigned","assignee_id":%d}`, teamID, memberID))
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	var task taskDTO
 	decodeJSON(t, readBody(t, resp), &task)
 
-	admin := makeAdmin(t, "an-or-admin@an.io")
+	admin := makeAdmin(t, mail("an-or-admin"))
 	orphansBefore := fetchOrphans(t, admin)
 	assert.NotContains(t, orphansBefore, task.ID, "пока member в команде — не сирота")
 
@@ -216,8 +223,9 @@ func fetchOrphans(t *testing.T, bearer string) []int64 {
 }
 
 func TestAnalyticsTeamStatsPagination(t *testing.T) {
-	admin := makeAdmin(t, "an-pg-admin@an.io")
-	owner := registerAndLogin(t, "an-pg-owner@an.io")
+	t.Parallel()
+	admin := makeAdmin(t, mail("an-pg-admin"))
+	owner := registerAndLogin(t, mail("an-pg-owner"))
 	for i := 0; i < 3; i++ {
 		createTeam(t, owner, fmt.Sprintf("an-pg-team-%d", i))
 	}

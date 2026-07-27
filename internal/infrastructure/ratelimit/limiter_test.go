@@ -3,15 +3,18 @@ package ratelimit
 import (
 	"context"
 	"log/slog"
+	"task_tracker/internal/infrastructure/cache"
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestAllowFailsOpenWhenRedisDown(t *testing.T) {
-	dead := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 50 * time.Millisecond})
+	dead := cache.NewRedis(cache.Config{
+		Addr: "127.0.0.1:1", DialTimeout: time.Second, MaxRetries: 1, DialerRetries: 1,
+	})
+	t.Cleanup(func() { _ = dead.Close() })
 	l := New(dead, Config{Requests: 1, Window: time.Minute}, slog.New(slog.DiscardHandler))
 
 	allowed, retryAfter := l.Allow(context.Background(), "user:42")

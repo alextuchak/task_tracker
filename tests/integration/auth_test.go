@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,8 +11,10 @@ import (
 )
 
 func TestRegisterCreated(t *testing.T) {
+	t.Parallel()
+	email := mail("ada")
 	resp := doJSON(t, http.MethodPost, "/api/v1/register", "",
-		`{"email":"ada@test.io","name":"Ada","password":"password123"}`)
+		fmt.Sprintf(`{"email":%q,"name":"Ada","password":"password123"}`, email))
 
 	require.Equal(t, http.StatusCreated, resp.StatusCode)
 	body := readBody(t, resp)
@@ -22,21 +25,24 @@ func TestRegisterCreated(t *testing.T) {
 	}
 	decodeJSON(t, body, &got)
 	assert.Positive(t, got.ID)
-	assert.Equal(t, "ada@test.io", got.Email)
+	assert.Equal(t, email, got.Email)
 	assert.Equal(t, "Ada", got.Name)
 	assert.NotContains(t, body, "password")
 }
 
 func TestRegisterDuplicateEmail(t *testing.T) {
-	register(t, "twice@test.io", "First", "password123")
+	t.Parallel()
+	email := mail("twice")
+	register(t, email, "First", "password123")
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/register", "",
-		`{"email":"twice@test.io","name":"Second","password":"password123"}`)
+		fmt.Sprintf(`{"email":%q,"name":"Second","password":"password123"}`, email))
 
 	require.Equal(t, http.StatusConflict, resp.StatusCode)
 }
 
 func TestRegisterValidation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		body string
@@ -56,10 +62,12 @@ func TestRegisterValidation(t *testing.T) {
 }
 
 func TestLoginReturnsWorkingJWT(t *testing.T) {
-	register(t, "login@test.io", "Ada", "password123")
+	t.Parallel()
+	email := mail("login")
+	register(t, email, "Ada", "password123")
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/login", "",
-		`{"email":"login@test.io","password":"password123"}`)
+		fmt.Sprintf(`{"email":%q,"password":"password123"}`, email))
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var got struct {
@@ -71,15 +79,18 @@ func TestLoginReturnsWorkingJWT(t *testing.T) {
 }
 
 func TestLoginWrongPassword(t *testing.T) {
-	register(t, "wrongpass@test.io", "Ada", "password123")
+	t.Parallel()
+	email := mail("wrongpass")
+	register(t, email, "Ada", "password123")
 
 	resp := doJSON(t, http.MethodPost, "/api/v1/login", "",
-		`{"email":"wrongpass@test.io","password":"not-the-password"}`)
+		fmt.Sprintf(`{"email":%q,"password":"not-the-password"}`, email))
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 func TestLoginUnknownEmail(t *testing.T) {
+	t.Parallel()
 	resp := doJSON(t, http.MethodPost, "/api/v1/login", "",
 		`{"email":"ghost@test.io","password":"password123"}`)
 
