@@ -14,7 +14,6 @@ import (
 	"strings"
 	"task_tracker/internal/identity"
 	"task_tracker/internal/infrastructure/cache"
-	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/persistence"
 	"task_tracker/internal/infrastructure/ratelimit"
@@ -24,7 +23,10 @@ import (
 
 	transporthttp "task_tracker/internal/transport/http"
 
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
+	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
 	"github.com/pressly/goose/v3"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
@@ -33,8 +35,8 @@ import (
 var (
 	baseURL   string
 	authSvc   *service.Auth
-	emailMock *emailServiceMock
 	testDB    *sql.DB
+	testRedis *redis.Client
 )
 
 func TestMain(m *testing.M) {
@@ -95,23 +97,23 @@ func run(m *testing.M) (int, error) {
 
 	rdb := cache.NewRedis(cache.Config{Addr: redisAddr})
 	defer func() { _ = rdb.Close() }()
-
-	emailMock = newEmailServiceMock()
-	defer emailMock.srv.Close()
+	testRedis = rdb
 
 	log := slog.New(slog.DiscardHandler)
 	idp := identity.NewProvider(identity.Config{Secret: strings.Repeat("s", 32), TTL: time.Hour})
-	userRepo := persistence.NewUserRepo(db)
+	getter := trmsql.DefaultCtxGetter
+	trManager := manager.Must(trmsql.NewDefaultFactory(db))
+	userRepo := persistence.NewUserRepo(db, trmsql.DefaultCtxGetter)
 	authSvc = service.NewAuth(userRepo, idp)
-	emailClient := email.NewClient(email.Config{
-		BaseURL: emailMock.srv.URL, Timeout: time.Second, MaxFailures: 3, OpenFor: time.Minute,
-	})
-	teamRepo := persistence.NewTeamRepo(db)
+	teamRepo := persistence.NewTeamRepo(db, getter)
+	outboxRepo := persistence.NewOutboxRepo(db, getter)
 	authz := service.NewAuthorizer(userRepo, teamRepo)
-	teamsSvc := service.NewTeams(teamRepo, userRepo, emailClient, authz, log)
+	teamsSvc := service.NewTeams(teamRepo, userRepo, outboxRepo, trManager, authz)
 	tasksCache := cache.NewTasks(rdb, time.Minute*5, log)
-	tasksSvc := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
-	analyticsSvc := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
+	tasksSvc := service.NewTasks(
+		persistence.NewTaskRepo(db, trmsql.DefaultCtxGetter), teamRepo, tasksCache,
+		manager.Must(trmsql.NewDefaultFactory(db)), authz)
+	analyticsSvc := service.NewAnalytics(persistence.NewAnalyticsRepo(db, trmsql.DefaultCtxGetter), authz)
 	userLimiter := ratelimit.New(rdb, ratelimit.Config{Requests: 150, Window: time.Minute}, log)
 	ipLimiter := ratelimit.New(rdb, ratelimit.Config{Requests: 100000, Window: time.Minute}, log)
 	testDB = db

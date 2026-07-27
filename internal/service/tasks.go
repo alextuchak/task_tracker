@@ -21,14 +21,18 @@ type TaskListCache interface {
 	InvalidateTeam(ctx context.Context, teamID int64)
 }
 
-func NewTasks(tasks TaskRepository, teams TeamRepository, cache TaskListCache, authz *Authorizer) *Tasks {
-	return &Tasks{tasks: tasks, teams: teams, cache: cache, authz: authz}
+func NewTasks(
+	tasks TaskRepository, teams TeamRepository, cache TaskListCache,
+	tx TxManager, authz *Authorizer,
+) *Tasks {
+	return &Tasks{tasks: tasks, teams: teams, cache: cache, tx: tx, authz: authz}
 }
 
 type Tasks struct {
 	tasks TaskRepository
 	teams TeamRepository
 	cache TaskListCache
+	tx    TxManager
 	authz *Authorizer
 }
 
@@ -50,20 +54,26 @@ func (s *Tasks) Create(ctx context.Context, actorID, teamID int64, in TaskInput)
 	if status == "" {
 		status = domain.TaskStatusTodo
 	}
-	id, err := s.tasks.Create(ctx, domain.Task{
-		TeamID:      teamID,
-		Title:       in.Title,
-		Description: in.Description,
-		Status:      status,
-		AssigneeID:  in.AssigneeID,
-		CreatedBy:   actorID,
+	var created domain.Task
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		id, err := s.tasks.Create(ctx, domain.Task{
+			TeamID:      teamID,
+			Title:       in.Title,
+			Description: in.Description,
+			Status:      status,
+			AssigneeID:  in.AssigneeID,
+			CreatedBy:   actorID,
+		})
+		if err != nil {
+			return fmt.Errorf("create task: %w", err)
+		}
+		if created, err = s.tasks.ByID(ctx, id); err != nil {
+			return fmt.Errorf("load created task: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
-		return domain.Task{}, fmt.Errorf("create task: %w", err)
-	}
-	created, err := s.tasks.ByID(ctx, id)
-	if err != nil {
-		return domain.Task{}, fmt.Errorf("load created task: %w", err)
+		return domain.Task{}, err
 	}
 	s.cache.InvalidateTeam(ctx, teamID)
 	return created, nil
@@ -85,26 +95,32 @@ func (s *Tasks) List(ctx context.Context, actorID int64, f domain.TaskFilter) ([
 }
 
 func (s *Tasks) Update(ctx context.Context, actorID, taskID int64, in TaskInput) (domain.Task, error) {
-	current, err := s.tasks.ByID(ctx, taskID)
-	if errors.Is(err, domain.ErrNotFound) {
-		return domain.Task{}, domain.ErrNotFound
-	}
+	var updated domain.Task
+	err := s.tx.Do(ctx, func(ctx context.Context) error {
+		current, err := s.tasks.ByID(ctx, taskID)
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("load task: %w", err)
+		}
+		if err := s.authz.RequireTeamRole(ctx, actorID, current.TeamID, domain.TeamRoleMember); err != nil {
+			return err
+		}
+		if err := s.requireAssigneeIsMember(ctx, current.TeamID, in.AssigneeID); err != nil {
+			return err
+		}
+		current.Title = in.Title
+		current.Description = in.Description
+		current.Status = in.Status
+		current.AssigneeID = in.AssigneeID
+		if updated, err = s.tasks.Update(ctx, actorID, current); err != nil {
+			return fmt.Errorf("update task: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return domain.Task{}, fmt.Errorf("load task: %w", err)
-	}
-	if err := s.authz.RequireTeamRole(ctx, actorID, current.TeamID, domain.TeamRoleMember); err != nil {
 		return domain.Task{}, err
-	}
-	if err := s.requireAssigneeIsMember(ctx, current.TeamID, in.AssigneeID); err != nil {
-		return domain.Task{}, err
-	}
-	current.Title = in.Title
-	current.Description = in.Description
-	current.Status = in.Status
-	current.AssigneeID = in.AssigneeID
-	updated, err := s.tasks.Update(ctx, actorID, current)
-	if err != nil {
-		return domain.Task{}, fmt.Errorf("update task: %w", err)
 	}
 	s.cache.InvalidateTeam(ctx, updated.TeamID)
 	return updated, nil

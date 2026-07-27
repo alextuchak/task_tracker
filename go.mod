@@ -3,6 +3,8 @@ module task_tracker
 go 1.25.7
 
 require (
+	github.com/avito-tech/go-transaction-manager/drivers/sql/v2 v2.0.4
+	github.com/avito-tech/go-transaction-manager/trm/v2 v2.0.4
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/go-redis/redis_rate/v10 v10.0.1

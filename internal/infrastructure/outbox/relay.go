@@ -1,0 +1,277 @@
+package outbox
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"math"
+	"math/rand/v2"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+const (
+	defaultPause = 30 * time.Second
+	backoffCap   = time.Hour
+	settleGrace  = 5 * time.Second
+)
+
+var errPaused = errors.New("outbox: downstream paused")
+
+type Repo interface {
+	Claim(ctx context.Context, batch int) ([]Claimed, error)
+	Delete(ctx context.Context, ids []int64) error
+	Reschedule(ctx context.Context, items []Retry) error
+	MarkFailed(ctx context.Context, items []Failure) error
+	OldestPendingAge(ctx context.Context) (time.Duration, error)
+}
+
+type Sender interface {
+	SendBatch(ctx context.Context, msgs []Message) ([]SendResult, error)
+}
+
+type Deduper interface {
+	WasSent(ctx context.Context, id int64) bool
+	MarkSent(ctx context.Context, id int64)
+}
+
+type TxManager interface {
+	Do(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
+type retryAfter interface {
+	RetryAfterHint() time.Duration
+}
+
+func NewRelay(repo Repo, sender Sender, dedup Deduper, tx TxManager, cfg Config, log *slog.Logger) *Relay {
+	return &Relay{
+		repo: repo, sender: sender, dedup: dedup, tx: tx,
+		cfg: cfg, log: log,
+	}
+}
+
+type Relay struct {
+	repo   Repo
+	sender Sender
+	dedup  Deduper
+	tx     TxManager
+	log    *slog.Logger
+	cfg    Config
+	paused atomic.Int64
+}
+
+func (r *Relay) Run(ctx context.Context) {
+	ticker := time.NewTicker(r.cfg.Tick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return
+			}
+			r.tick(ctx)
+		}
+	}
+}
+
+func (r *Relay) tick(parent context.Context) {
+	txCtx, cancelTx := context.WithTimeout(context.WithoutCancel(parent), r.cfg.Budget+settleGrace)
+	defer cancelTx()
+	sendCtx, cancelSend := context.WithTimeout(parent, r.cfg.Budget)
+	defer cancelSend()
+
+	if time.Now().UnixNano() < r.paused.Load() {
+		return
+	}
+	r.observeOldestPending(txCtx)
+
+	var s settlement
+	err := r.tx.Do(txCtx, func(ctx context.Context) error {
+		claimed, err := r.repo.Claim(ctx, r.cfg.Batch)
+		if err != nil {
+			return err
+		}
+		if len(claimed) == 0 {
+			return nil
+		}
+		s = r.dispatch(sendCtx, claimed)
+		if err := r.repo.Delete(ctx, s.sent); err != nil {
+			return err
+		}
+		if err := r.repo.Reschedule(ctx, s.reschedule); err != nil {
+			return err
+		}
+		return r.repo.MarkFailed(ctx, s.fail)
+	})
+	if err != nil {
+		r.log.Error("outbox tick", slog.Any("error", err))
+		return
+	}
+
+	if s.paused {
+		r.pause(s.pause)
+	}
+	failedTotal.Add(float64(len(s.fail)))
+}
+
+func (r *Relay) dispatch(ctx context.Context, claimed []Claimed) settlement {
+	shards := shardBy(claimed, r.cfg.Workers)
+	outcomes := make([]shardOutcome, len(shards))
+	sendCtx, cancelSend := context.WithCancelCause(ctx)
+	defer cancelSend(nil)
+
+	var wg sync.WaitGroup
+	for i, shard := range shards {
+		wg.Go(func() { outcomes[i] = r.processShard(sendCtx, shard, cancelSend) })
+	}
+	wg.Wait()
+
+	return r.collect(outcomes)
+}
+
+type shardOutcome struct {
+	sent   []int64
+	retry  []retryItem
+	pause  time.Duration
+	paused bool
+}
+
+type retryItem struct {
+	reason  string
+	claimed Claimed
+}
+
+func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel context.CancelCauseFunc) shardOutcome {
+	var out shardOutcome
+	if ctx.Err() != nil {
+		if errors.Is(context.Cause(ctx), errPaused) {
+			r.log.Debug("outbox shard skipped: downstream paused by a sibling",
+				slog.Int("skipped", len(shard)))
+		} else {
+			r.log.Warn("outbox shard skipped: tick budget expired",
+				slog.Int("skipped", len(shard)))
+		}
+		return out
+	}
+
+	pending := make([]Claimed, 0, len(shard))
+	msgs := make([]Message, 0, len(shard))
+	for _, c := range shard {
+		if r.dedup.WasSent(ctx, c.ID) {
+			out.sent = append(out.sent, c.ID)
+			continue
+		}
+		pending = append(pending, c)
+		msgs = append(msgs, c.Message)
+	}
+	if len(msgs) == 0 {
+		return out
+	}
+
+	results, err := r.sender.SendBatch(ctx, msgs)
+	if err != nil {
+		var hint retryAfter
+		if errors.As(err, &hint) {
+			out.pause = hint.RetryAfterHint()
+		}
+		out.paused = true
+		cancel(errPaused)
+		return out
+	}
+	if len(results) != len(msgs) {
+		r.log.Error("outbox: provider returned a mismatched result count",
+			slog.Int("sent", len(msgs)), slog.Int("got", len(results)))
+		out.paused = true
+		cancel(errPaused)
+		return out
+	}
+
+	for i, c := range pending {
+		if results[i].Err != nil {
+			out.retry = append(out.retry, retryItem{claimed: c, reason: results[i].Err.Error()})
+			continue
+		}
+		r.dedup.MarkSent(ctx, c.ID)
+		sentTotal.Inc()
+		out.sent = append(out.sent, c.ID)
+	}
+	return out
+}
+
+type settlement struct {
+	sent       []int64
+	reschedule []Retry
+	fail       []Failure
+	pause      time.Duration
+	paused     bool
+}
+
+func (r *Relay) collect(outcomes []shardOutcome) settlement {
+	var s settlement
+	for _, o := range outcomes {
+		s.sent = append(s.sent, o.sent...)
+		for _, it := range o.retry {
+			attempts := it.claimed.Attempts + 1
+			if attempts >= r.cfg.MaxAttempts {
+				s.fail = append(s.fail, Failure{LastErr: it.reason, ID: it.claimed.ID})
+				continue
+			}
+			s.reschedule = append(s.reschedule, Retry{
+				LastErr: it.reason, Delay: backoff(attempts), ID: it.claimed.ID,
+			})
+		}
+		if o.paused {
+			s.paused = true
+			s.pause = max(s.pause, o.pause)
+		}
+	}
+	return s
+}
+
+func (r *Relay) pause(hint time.Duration) {
+	d := hint
+	if d <= 0 {
+		d = defaultPause
+	}
+	r.paused.Store(time.Now().Add(d).UnixNano())
+	r.log.Warn("outbox paused", slog.Duration("for", d))
+}
+
+func (r *Relay) observeOldestPending(ctx context.Context) {
+	age, err := r.repo.OldestPendingAge(ctx)
+	if err != nil {
+		r.log.Error("outbox oldest pending", slog.Any("error", err))
+		return
+	}
+	oldestPendingSeconds.Set(age.Seconds())
+}
+
+func shardBy(items []Claimed, workers int) [][]Claimed {
+	if len(items) == 0 {
+		return nil
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(items) {
+		workers = len(items)
+	}
+	size := (len(items) + workers - 1) / workers
+	shards := make([][]Claimed, 0, workers)
+	for start := 0; start < len(items); start += size {
+		shards = append(shards, items[start:min(start+size, len(items))])
+	}
+	return shards
+}
+
+func backoff(attempt int) time.Duration {
+	d := time.Duration(math.Pow(float64(attempt), 4)) * time.Second
+	if d > backoffCap {
+		d = backoffCap
+	}
+	jitter := 1 + (rand.Float64()*0.2 - 0.1) // #nosec G404 -- retry jitter, not security
+	return time.Duration(float64(d) * jitter)
+}

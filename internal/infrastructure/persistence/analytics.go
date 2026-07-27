@@ -5,18 +5,21 @@ import (
 	"database/sql"
 	"fmt"
 	"task_tracker/internal/domain"
+
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
 )
 
-func NewAnalyticsRepo(db *sql.DB) *AnalyticsRepo {
-	return &AnalyticsRepo{db: db}
+func NewAnalyticsRepo(db *sql.DB, getter *trmsql.CtxGetter) *AnalyticsRepo {
+	return &AnalyticsRepo{db: db, getter: getter}
 }
 
 type AnalyticsRepo struct {
-	db *sql.DB
+	db     *sql.DB
+	getter *trmsql.CtxGetter
 }
 
 func (r *AnalyticsRepo) TeamStats(ctx context.Context, afterID int64, limit int) ([]domain.TeamStats, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.getter.DefaultTrOrDB(ctx, r.db).QueryContext(ctx, `
 		SELECT t.id,
 		       t.name,
 		       COALESCE(m.members, 0)      AS members,
@@ -53,7 +56,7 @@ func (r *AnalyticsRepo) TeamStats(ctx context.Context, afterID int64, limit int)
 }
 
 func (r *AnalyticsRepo) TopCreators(ctx context.Context, afterID int64, limit int) ([]domain.TeamTopCreator, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.getter.DefaultTrOrDB(ctx, r.db).QueryContext(ctx, `
 		WITH page_teams AS (
 		    SELECT DISTINCT ta.team_id
 		    FROM tasks ta
@@ -100,7 +103,7 @@ func (r *AnalyticsRepo) TopCreators(ctx context.Context, afterID int64, limit in
 }
 
 func (r *AnalyticsRepo) OrphanAssignees(ctx context.Context, afterID int64, limit int) ([]domain.OrphanAssignee, error) {
-	rows, err := r.db.QueryContext(ctx, `
+	rows, err := r.getter.DefaultTrOrDB(ctx, r.db).QueryContext(ctx, `
 		SELECT ta.id, ta.team_id, ta.assignee_id, ta.title
 		FROM tasks ta
 		LEFT JOIN team_members tm

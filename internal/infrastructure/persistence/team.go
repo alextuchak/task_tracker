@@ -7,27 +7,24 @@ import (
 	"fmt"
 	"task_tracker/internal/domain"
 
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
 	mysqldrv "github.com/go-sql-driver/mysql"
 )
 
 const foreignKeyViolationCode = 1452
 
-func NewTeamRepo(db *sql.DB) *TeamRepo {
-	return &TeamRepo{db: db}
+func NewTeamRepo(db *sql.DB, getter *trmsql.CtxGetter) *TeamRepo {
+	return &TeamRepo{db: db, getter: getter}
 }
 
 type TeamRepo struct {
-	db *sql.DB
+	db     *sql.DB
+	getter *trmsql.CtxGetter
 }
 
 func (r *TeamRepo) Create(ctx context.Context, name string, creatorID int64) (int64, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	res, err := tx.ExecContext(ctx,
+	conn := r.getter.DefaultTrOrDB(ctx, r.db)
+	res, err := conn.ExecContext(ctx,
 		`INSERT INTO teams (name, created_by) VALUES (?, ?)`, name, creatorID)
 	if err != nil {
 		return 0, fmt.Errorf("insert team: %w", err)
@@ -36,19 +33,12 @@ func (r *TeamRepo) Create(ctx context.Context, name string, creatorID int64) (in
 	if err != nil {
 		return 0, fmt.Errorf("last insert id: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)`,
-		teamID, creatorID, domain.TeamRoleOwner); err != nil {
-		return 0, fmt.Errorf("insert owner: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit: %w", err)
-	}
 	return teamID, nil
 }
 
 func (r *TeamRepo) ListByUser(ctx context.Context, userID int64) ([]domain.TeamMembership, error) {
-	rows, err := r.db.QueryContext(ctx,
+	conn := r.getter.DefaultTrOrDB(ctx, r.db)
+	rows, err := conn.QueryContext(ctx,
 		`SELECT t.id, t.name, tm.role
 		 FROM team_members tm
 		 JOIN teams t ON t.id = tm.team_id
@@ -74,8 +64,9 @@ func (r *TeamRepo) ListByUser(ctx context.Context, userID int64) ([]domain.TeamM
 }
 
 func (r *TeamRepo) MemberRole(ctx context.Context, teamID, userID int64) (domain.TeamRole, error) {
+	conn := r.getter.DefaultTrOrDB(ctx, r.db)
 	var role domain.TeamRole
-	err := r.db.QueryRowContext(ctx,
+	err := conn.QueryRowContext(ctx,
 		`SELECT role FROM team_members WHERE team_id = ? AND user_id = ?`,
 		teamID, userID,
 	).Scan(&role)
@@ -89,7 +80,8 @@ func (r *TeamRepo) MemberRole(ctx context.Context, teamID, userID int64) (domain
 }
 
 func (r *TeamRepo) AddMember(ctx context.Context, teamID, userID int64, role domain.TeamRole) error {
-	_, err := r.db.ExecContext(ctx,
+	conn := r.getter.DefaultTrOrDB(ctx, r.db)
+	_, err := conn.ExecContext(ctx,
 		`INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)`,
 		teamID, userID, role)
 	var mysqlErr *mysqldrv.MySQLError

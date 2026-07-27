@@ -7,21 +7,24 @@ import (
 	"fmt"
 	"task_tracker/internal/domain"
 
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
+
 	mysqldrv "github.com/go-sql-driver/mysql"
 )
 
 const duplicateEntryCode = 1062
 
-func NewUserRepo(db *sql.DB) *UserRepo {
-	return &UserRepo{db: db}
+func NewUserRepo(db *sql.DB, getter *trmsql.CtxGetter) *UserRepo {
+	return &UserRepo{db: db, getter: getter}
 }
 
 type UserRepo struct {
-	db *sql.DB
+	db     *sql.DB
+	getter *trmsql.CtxGetter
 }
 
 func (r *UserRepo) Create(ctx context.Context, u domain.User) (int64, error) {
-	res, err := r.db.ExecContext(ctx,
+	res, err := r.getter.DefaultTrOrDB(ctx, r.db).ExecContext(ctx,
 		`INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)`,
 		u.Email, u.PasswordHash, u.Name,
 	)
@@ -41,7 +44,7 @@ func (r *UserRepo) Create(ctx context.Context, u domain.User) (int64, error) {
 
 func (r *UserRepo) ByID(ctx context.Context, id int64) (domain.User, error) {
 	var u domain.User
-	err := r.db.QueryRowContext(ctx,
+	err := r.getter.DefaultTrOrDB(ctx, r.db).QueryRowContext(ctx,
 		`SELECT id, email, name, role, created_at FROM users WHERE id = ?`, id,
 	).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -54,7 +57,7 @@ func (r *UserRepo) ByID(ctx context.Context, id int64) (domain.User, error) {
 }
 
 func (r *UserRepo) GrantAdmin(ctx context.Context, email string) error {
-	res, err := r.db.ExecContext(ctx,
+	res, err := r.getter.DefaultTrOrDB(ctx, r.db).ExecContext(ctx,
 		`UPDATE users SET role = ? WHERE email = ?`, domain.RoleAdmin, email)
 	if err != nil {
 		return fmt.Errorf("grant admin: %w", err)
@@ -73,7 +76,7 @@ func (r *UserRepo) GrantAdmin(ctx context.Context, email string) error {
 
 func (r *UserRepo) ByEmail(ctx context.Context, email string) (domain.User, error) {
 	var u domain.User
-	err := r.db.QueryRowContext(ctx,
+	err := r.getter.DefaultTrOrDB(ctx, r.db).QueryRowContext(ctx,
 		`SELECT id, email, password_hash, name, role, created_at FROM users WHERE email = ?`, email,
 	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -11,11 +11,15 @@ import (
 	"task_tracker/internal/infrastructure/email"
 	"task_tracker/internal/infrastructure/health"
 	"task_tracker/internal/infrastructure/lifecycle"
+	"task_tracker/internal/infrastructure/outbox"
 	"task_tracker/internal/infrastructure/persistence"
 	"task_tracker/internal/infrastructure/ratelimit"
 	"task_tracker/internal/service"
 
 	transport "task_tracker/internal/transport/http"
+
+	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
+	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
 )
 
 func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Logger) (*App, error) {
@@ -30,30 +34,40 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 
 	rdb := cache.NewRedis(cfg.Redis)
 	c.AddClose(func(context.Context) error { return rdb.Close() })
-	st.AddPing(func(ctx context.Context) error { return rdb.Ping(ctx).Err() })
+	st.AddPing(func(ctx context.Context) error {
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			log.Warn("redis unavailable at startup, degrading gracefully", slog.Any("error", err))
+		}
+		return nil
+	})
 
 	if err := st.Start(ctx); err != nil {
 		return nil, fmt.Errorf("startup pings: %w", err)
 	}
 
 	h := health.New(cfg.Health)
-	h.AddCheck(
-		func(ctx context.Context) error { return db.PingContext(ctx) },
-		func(ctx context.Context) error { return rdb.Ping(ctx).Err() },
-	)
+	h.AddCheck(func(ctx context.Context) error { return db.PingContext(ctx) })
+
+	getter := trmsql.DefaultCtxGetter
+	trManager := manager.Must(trmsql.NewDefaultFactory(db))
 
 	idp := identity.NewProvider(cfg.Auth)
-	userRepo := persistence.NewUserRepo(db)
+	userRepo := persistence.NewUserRepo(db, getter)
 	authService := service.NewAuth(userRepo, idp)
-	teamRepo := persistence.NewTeamRepo(db)
+	teamRepo := persistence.NewTeamRepo(db, getter)
+	outboxRepo := persistence.NewOutboxRepo(db, getter)
 	authz := service.NewAuthorizer(userRepo, teamRepo)
-	teamsService := service.NewTeams(teamRepo, userRepo, email.NewClient(cfg.Email), authz, log)
+	teamsService := service.NewTeams(teamRepo, userRepo, outboxRepo, trManager, authz)
 	tasksCache := cache.NewTasks(rdb, cfg.Redis.TasksTTL, log)
-	tasksService := service.NewTasks(persistence.NewTaskRepo(db), teamRepo, tasksCache, authz)
-	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db), authz)
+	tasksService := service.NewTasks(
+		persistence.NewTaskRepo(db, getter), teamRepo, tasksCache, trManager, authz)
+	analyticsService := service.NewAnalytics(persistence.NewAnalyticsRepo(db, getter), authz)
 	userLimiter := ratelimit.New(rdb, cfg.RateLimit, log)
 	ipLimiter := ratelimit.New(rdb, cfg.RateLimitPublic, log)
 
+	dedup := cache.NewDedup(rdb, cfg.Outbox.DedupTTL, log)
+	relay := outbox.NewRelay(outboxRepo, email.NewClient(cfg.Email, log), dedup, trManager, cfg.Outbox, log)
+	go relay.Run(ctx)
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
 		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, idp, userLimiter, ipLimiter, cfg.RateLimitPublic.TrustedNets()),

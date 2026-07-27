@@ -19,6 +19,7 @@ import (
 type worker struct {
 	client *http.Client
 	base   string
+	email  string
 	token  string
 	tasks  []int64
 	teamID int64
@@ -27,7 +28,35 @@ type worker struct {
 var (
 	total    atomic.Int64
 	statuses sync.Map
+
+	// Accounts already registered, shared so invites can reuse them. Every
+	// registration costs a bcrypt hash, and at this request rate that CPU shows
+	// up as latency on everything else.
+	poolMu sync.RWMutex
+	pool   []string
 )
+
+func addToPool(email string) {
+	poolMu.Lock()
+	pool = append(pool, email)
+	poolMu.Unlock()
+}
+
+// pickInvitee returns a registered account other than the caller's, or "" while
+// the pool is still filling up.
+func pickInvitee(self string) string {
+	poolMu.RLock()
+	defer poolMu.RUnlock()
+	for range 5 {
+		if len(pool) < 2 {
+			return ""
+		}
+		if e := pool[rand.Intn(len(pool))]; e != self { // #nosec G404 -- random pick, not security
+			return e
+		}
+	}
+	return ""
+}
 
 func main() {
 	base := flag.String("url", "http://localhost:8080", "base url")
@@ -83,6 +112,8 @@ func setupWorker(base string, id int) (*worker, error) {
 		return nil, err
 	}
 	w.token = login.AccessToken
+	w.email = email
+	addToPool(email)
 
 	body, err = w.post("/api/v1/teams", map[string]any{"name": fmt.Sprintf("loadgen-team-%d-%d", id, time.Now().Unix())})
 	if err != nil {
@@ -117,6 +148,13 @@ func setupWorker(base string, id int) (*worker, error) {
 func (w *worker) run(deadline time.Time, pause time.Duration) {
 	statusesList := []string{"todo", "in_progress", "done"}
 	for time.Now().Before(deadline) {
+		// Invites are the only producer the outbox has. Keep them rare: the relay
+		// should be exercised, not buried under a queue it cannot drain.
+		if rand.Intn(50) == 0 { // #nosec G404 -- traffic mix, not security
+			w.invite()
+			time.Sleep(pause)
+			continue
+		}
 		switch rand.Intn(10) { // #nosec G404 -- traffic mix, not security
 		case 0, 1, 2:
 			w.get(fmt.Sprintf("/api/v1/tasks?team_id=%d", w.teamID), w.token)
@@ -138,6 +176,17 @@ func (w *worker) run(deadline time.Time, pause time.Duration) {
 		}
 		time.Sleep(pause + time.Duration(rand.Intn(60))*time.Millisecond) // #nosec G404 -- jitter, not security
 	}
+}
+
+// invite registers a fresh account and invites it to the worker's team, which
+// is what puts a row into the outbox.
+func (w *worker) invite() {
+	invitee := pickInvitee(w.email)
+	if invitee == "" {
+		return
+	}
+	_, _ = w.request(http.MethodPost, fmt.Sprintf("/api/v1/teams/%d/invite", w.teamID),
+		map[string]any{"email": invitee}, w.token)
 }
 
 func (w *worker) get(path, token string) {

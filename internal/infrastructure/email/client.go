@@ -1,63 +1,58 @@
 package email
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
+	"errors"
+	"log/slog"
+	"task_tracker/internal/infrastructure/outbox"
+	"time"
 
 	"github.com/sony/gobreaker/v2"
 )
 
 type Client struct {
-	http    *http.Client
 	breaker *gobreaker.CircuitBreaker[struct{}]
-	baseURL string
+	log     *slog.Logger
+	openFor time.Duration
+	timeout time.Duration
 }
 
-func NewClient(cfg Config) *Client {
+func NewClient(cfg Config, log *slog.Logger) *Client {
 	settings := gobreaker.Settings{
 		Name:    "email-service",
 		Timeout: cfg.OpenFor,
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			return counts.ConsecutiveFailures >= cfg.MaxFailures
+		ReadyToTrip: func(c gobreaker.Counts) bool {
+			return c.ConsecutiveFailures >= cfg.MaxFailures
 		},
 	}
 	return &Client{
-		http:    &http.Client{Timeout: cfg.Timeout},
 		breaker: gobreaker.NewCircuitBreaker[struct{}](settings),
-		baseURL: cfg.BaseURL,
+		log:     log,
+		openFor: cfg.OpenFor,
+		timeout: cfg.Timeout,
 	}
 }
 
-type invitePayload struct {
-	Email  string `json:"email"`
-	TeamID int64  `json:"team_id"`
-}
-
-func (c *Client) SendInvite(ctx context.Context, to string, teamID int64) error {
+func (c *Client) SendBatch(ctx context.Context, msgs []outbox.Message) ([]outbox.SendResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	_, err := c.breaker.Execute(func() (struct{}, error) {
-		body, err := json.Marshal(invitePayload{Email: to, TeamID: teamID})
-		if err != nil {
-			return struct{}{}, fmt.Errorf("marshal invite: %w", err)
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			c.baseURL+"/invites", bytes.NewReader(body))
-		if err != nil {
-			return struct{}{}, fmt.Errorf("build request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := c.http.Do(req)
-		if err != nil {
-			return struct{}{}, fmt.Errorf("send invite: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode >= http.StatusBadRequest {
-			return struct{}{}, fmt.Errorf("email service status %d", resp.StatusCode)
-		}
+		c.log.Info("email batch delivered (mock)", slog.Int("count", len(msgs)))
 		return struct{}{}, nil
 	})
-	return err
+	if errors.Is(err, gobreaker.ErrOpenState) {
+		return nil, &SendError{RetryAfter: c.openFor}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return make([]outbox.SendResult, len(msgs)), nil
 }
+
+type SendError struct {
+	RetryAfter time.Duration
+}
+
+func (e *SendError) Error() string                 { return "email service unavailable" }
+func (e *SendError) RetryAfterHint() time.Duration { return e.RetryAfter }
