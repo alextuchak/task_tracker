@@ -4,24 +4,42 @@
   "timezone": "browser",
   "refresh": "10s",
   "time": {
-    "from": "now-30m",
+    "from": "now-15m",
     "to": "now"
   },
   "panels": [
     {
+      "id": 100,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
       "id": 10,
-      "title": "RPS total",
+      "title": "Requests /s",
       "type": "stat",
       "gridPos": {
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[1m]))"
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -31,11 +49,6 @@
         "graphMode": "area",
         "colorMode": "value"
       },
-      "targets": [
-        {
-          "expr": "sum(rate(http_requests_total[1m]))"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "decimals": 0
@@ -44,18 +57,23 @@
     },
     {
       "id": 11,
-      "title": "Errors 5xx /s",
+      "title": "Error ratio",
       "type": "stat",
       "gridPos": {
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 0
+        "y": 1
       },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "targets": [
+        {
+          "expr": "(sum(rate(http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_requests_total[5m])), 0.001)"
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -65,14 +83,10 @@
         "graphMode": "area",
         "colorMode": "value"
       },
-      "targets": [
-        {
-          "expr": "sum(rate(http_request_errors_total[1m])) or vector(0)"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "decimals": 2
+          "decimals": 2,
+          "unit": "percentunit"
         }
       }
     },
@@ -84,12 +98,17 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 0
+        "y": 1
       },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))"
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -99,11 +118,6 @@
         "graphMode": "area",
         "colorMode": "value"
       },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "s"
@@ -118,12 +132,17 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 0
+        "y": 1
       },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))"
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -133,11 +152,6 @@
         "graphMode": "area",
         "colorMode": "value"
       },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "s"
@@ -146,18 +160,23 @@
     },
     {
       "id": 14,
-      "title": "Goroutines",
+      "title": "Memory (RSS)",
       "type": "stat",
       "gridPos": {
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 0
+        "y": 1
       },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes"
+        }
+      ],
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -167,60 +186,56 @@
         "graphMode": "area",
         "colorMode": "value"
       },
-      "targets": [
-        {
-          "expr": "go_goroutines"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "decimals": 0
-        }
-      }
-    },
-    {
-      "id": 15,
-      "title": "Heap in use",
-      "type": "stat",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 0
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "graphMode": "area",
-        "colorMode": "value"
-      },
-      "targets": [
-        {
-          "expr": "go_memstats_heap_inuse_bytes"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
+          "decimals": 0,
           "unit": "bytes"
         }
       }
     },
     {
+      "id": 15,
+      "title": "CPU cores",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total[1m])"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "area",
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2
+        }
+      }
+    },
+    {
       "id": 1,
-      "title": "Requests per second",
+      "title": "Traffic",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 5
       },
       "datasource": {
         "type": "prometheus",
@@ -230,22 +245,35 @@
         {
           "expr": "sum by (route) (rate(http_requests_total[1m]))",
           "legendFormat": "{{route}}"
-        },
-        {
-          "expr": "sum(rate(http_requests_total[1m]))",
-          "legendFormat": "total"
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 2,
-      "title": "Error rate (5xx)",
+      "title": "Errors by class",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 5
       },
       "datasource": {
         "type": "prometheus",
@@ -253,87 +281,492 @@
       },
       "targets": [
         {
-          "expr": "sum by (route) (rate(http_request_errors_total[5m]))",
-          "legendFormat": "{{route}}"
+          "expr": "sum by (route) (rate(http_requests_total{status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx {{route}}"
+        },
+        {
+          "expr": "sum by (route) (rate(http_requests_total{status=~\"4..\"}[5m]))",
+          "legendFormat": "4xx {{route}}"
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 3,
-      "title": "Latency p95",
+      "title": "Latency percentiles",
       "type": "timeseries",
       "gridPos": {
-        "h": 8,
-        "w": 8,
+        "h": 10,
+        "w": 24,
         "x": 0,
-        "y": 12
+        "y": 13
       },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
           "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "showPoints": "never",
             "scaleDistribution": {
               "type": "log",
-              "log": 10
+              "log": 2
+            },
+            "axisGridShow": true
+          },
+          "unit": "s",
+          "min": 0.001
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "Outbox relay",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "panels": [
+        {
+          "id": 20,
+          "title": "Sent /s",
+          "type": "stat",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 24
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(outbox_sent_total[1m]))"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "graphMode": "area",
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 2
             }
           }
-        }
-      },
-      "targets": [
+        },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))",
-          "legendFormat": "{{route}}"
+          "id": 21,
+          "title": "Dead-lettered (1h)",
+          "type": "stat",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 24
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(outbox_failed_total[1h])) or vector(0)"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "graphMode": "area",
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0
+            }
+          }
+        },
+        {
+          "id": 22,
+          "title": "Oldest pending",
+          "type": "stat",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 24
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "outbox_oldest_pending_seconds"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "graphMode": "area",
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            }
+          }
+        },
+        {
+          "id": 23,
+          "title": "Dedup unavailable (1h)",
+          "type": "stat",
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 24
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(outbox_dedup_unavailable_total[1h])) or vector(0)"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "graphMode": "area",
+            "colorMode": "value"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0
+            }
+          }
+        },
+        {
+          "id": 24,
+          "title": "Outbox throughput",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 28
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(outbox_sent_total[5m]))",
+              "legendFormat": "sent/s"
+            },
+            {
+              "expr": "sum(rate(outbox_failed_total[5m]))",
+              "legendFormat": "dead-lettered/s"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "fillOpacity": 8,
+                "lineWidth": 2,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 25,
+          "title": "Queue lag (oldest pending)",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 28
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "outbox_oldest_pending_seconds",
+              "legendFormat": "age"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "fillOpacity": 8,
+                "lineWidth": 2,
+                "showPoints": "never"
+              },
+              "unit": "s"
+            },
+            "overrides": []
+          }
         }
       ]
     },
     {
-      "id": 4,
-      "title": "Goroutines",
-      "type": "timeseries",
+      "id": 102,
+      "type": "row",
+      "title": "Runtime",
+      "collapsed": true,
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 12
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
       },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
+      "panels": [
         {
-          "expr": "go_goroutines",
-          "legendFormat": "goroutines"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "Heap in use",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 12
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        }
-      },
-      "targets": [
+          "id": 30,
+          "title": "Memory",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 36
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "process_resident_memory_bytes",
+              "legendFormat": "RSS (process)"
+            },
+            {
+              "expr": "go_memstats_heap_inuse_bytes",
+              "legendFormat": "heap in use"
+            },
+            {
+              "expr": "go_memstats_sys_bytes",
+              "legendFormat": "reserved from OS"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "fillOpacity": 8,
+                "lineWidth": 2,
+                "showPoints": "never"
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        },
         {
-          "expr": "go_memstats_heap_inuse_bytes",
-          "legendFormat": "heap in use"
+          "id": 31,
+          "title": "CPU cores",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 36
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "rate(process_cpu_seconds_total[1m])",
+              "legendFormat": "cores"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "fillOpacity": 8,
+                "lineWidth": 2,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 32,
+          "title": "Goroutines",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 43
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "go_goroutines",
+              "legendFormat": "goroutines"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "fillOpacity": 8,
+                "lineWidth": 2,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 33,
+          "title": "Open file descriptors",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 43
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "process_open_fds",
+              "legendFormat": "open"
+            },
+            {
+              "expr": "process_max_fds",
+              "legendFormat": "limit"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "fillOpacity": 8,
+                "lineWidth": 2,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          }
         }
       ]
     }
