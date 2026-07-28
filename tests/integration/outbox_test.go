@@ -234,8 +234,15 @@ type relayHandle struct {
 
 func startRelay(t *testing.T, sender outbox.Sender, cfg outbox.Config) relayHandle {
 	t.Helper()
+	return startRelayWithDedup(t, sender, cfg,
+		cache.NewDedup(testRedis, time.Hour, slog.New(slog.DiscardHandler)))
+}
+
+func startRelayWithDedup(
+	t *testing.T, sender outbox.Sender, cfg outbox.Config, dedup *cache.Dedup,
+) relayHandle {
+	t.Helper()
 	repo := persistence.NewOutboxRepo(testDB, trmsql.DefaultCtxGetter)
-	dedup := cache.NewDedup(testRedis, time.Hour, slog.New(slog.DiscardHandler))
 	trManager := manager.Must(trmsql.NewDefaultFactory(testDB))
 	logs := &logCapture{}
 	relay := outbox.NewRelay(repo, sender, dedup, trManager, cfg, slog.New(logs))
@@ -370,7 +377,7 @@ func TestOutboxDelivers(t *testing.T) {
 func TestOutboxRejectedMessageGoesToDeadLetter(t *testing.T) {
 	resetOutbox(t)
 	rcpt := "rejected@outbox.io"
-	enqueueRow(t, rcpt)
+	id := enqueueRow(t, rcpt)
 	sender := newStubSender()
 	sender.fail = func(r string) error {
 		if r == rcpt {
@@ -383,6 +390,10 @@ func TestOutboxRejectedMessageGoesToDeadLetter(t *testing.T) {
 	require.Eventually(t, func() bool { return outboxStatus(t, rcpt) == "failed" },
 		5*time.Second, 20*time.Millisecond, "a rejected recipient should dead-letter the row")
 	assert.Zero(t, sender.count(rcpt))
+	// a mark here would make the next attempt skip the send and delete the row:
+	// the message disappears with neither a delivery nor a dead letter
+	assert.False(t, cache.NewDedup(testRedis, time.Hour, slog.New(slog.DiscardHandler)).
+		WasSent(context.Background(), id))
 }
 
 // Covers the batched Reschedule: several rows, each with its own backoff and
@@ -709,11 +720,34 @@ func TestOutboxPoisonMessageDoesNotWedgeTheQueue(t *testing.T) {
 		"a message that keeps panicking must spend its attempts and dead-letter")
 }
 
+func TestOutboxMarksDedupEvenWhenTheBudgetIsSpent(t *testing.T) {
+	resetOutbox(t)
+	rcpt := "budget-mark@outbox.io"
+	id := enqueueRow(t, rcpt)
+	sender := newStubSender()
+	sender.holdUntilReleased()
+	defer sender.release()
+	cfg := fastConfig(8)
+	cfg.Budget = 50 * time.Millisecond
+	startRelay(t, sender, cfg)
+
+	sender.waitEntered(t)
+	time.Sleep(2 * cfg.Budget)
+	sender.release()
+
+	require.Eventually(t, func() bool { return outboxCount(t, rcpt) == 0 },
+		10*time.Second, 20*time.Millisecond)
+
+	require.Equal(t, 1, sender.callCount())
+	marked := cache.NewDedup(testRedis, time.Hour, slog.New(slog.DiscardHandler)).
+		WasSent(context.Background(), id)
+	assert.True(t, marked, "a delivered message must carry its dedup mark")
+}
+
 func TestOutboxDedupSuppressesResend(t *testing.T) {
 	resetOutbox(t)
 	rcpt := "dedup@outbox.io"
 	id := enqueueRow(t, rcpt)
-	// a prior run already delivered this message and left the marker in Redis
 	cache.NewDedup(testRedis, time.Hour, slog.New(slog.DiscardHandler)).
 		MarkSent(context.Background(), id)
 
@@ -747,4 +781,34 @@ func TestOutboxConcurrentRelaysSendEachOnce(t *testing.T) {
 	for i := range n {
 		assert.Equal(t, 1, sender.count(fmt.Sprintf("c%d@%s", i, marker)))
 	}
+}
+
+func TestUnreachableDedupDoesNotStallTheBatch(t *testing.T) {
+	resetOutbox(t)
+	const batch = 25
+	for i := range batch {
+		enqueueRow(t, fmt.Sprintf("dead-dedup-%d@outbox.io", i))
+	}
+	dead := cache.NewRedis(cache.Config{
+		Addr: "192.0.2.1:6379", DialTimeout: time.Second, MaxRetries: 1, DialerRetries: 1,
+	})
+	t.Cleanup(func() { _ = dead.Close() })
+	sender := newStubSender()
+
+	startRelayWithDedup(t, sender, fastConfig(3),
+		cache.NewDedup(dead, time.Hour, slog.New(slog.DiscardHandler)))
+
+	require.Eventually(t, func() bool { return outboxTotal(t) == 0 }, 3*time.Second, 20*time.Millisecond,
+		"the dedup costs a batch one dial, not %d of them", batch)
+	for i := range batch {
+		assert.Equal(t, 1, sender.count(fmt.Sprintf("dead-dedup-%d@outbox.io", i)),
+			"delivery must not depend on the dedup being reachable")
+	}
+}
+
+func outboxTotal(t *testing.T) int {
+	t.Helper()
+	var n int
+	require.NoError(t, testDB.QueryRow(`SELECT COUNT(*) FROM email_outbox`).Scan(&n))
+	return n
 }

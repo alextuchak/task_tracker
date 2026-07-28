@@ -17,6 +17,9 @@ const (
 	defaultPause = 30 * time.Second
 	backoffCap   = time.Hour
 	settleGrace  = 5 * time.Second
+	// the dedup gets one second of a tick to answer, once for the checks and
+	// once for the marks: it saves duplicates, it does not get to stop delivery
+	dedupGrace = time.Second
 )
 
 var errPaused = errors.New("outbox: downstream paused")
@@ -46,7 +49,7 @@ type retryAfter interface {
 	RetryAfterHint() time.Duration
 }
 
-func (c Config) SettleWindow() time.Duration { return c.Budget + settleGrace }
+func (c Config) SettleWindow() time.Duration { return c.Budget + dedupGrace + settleGrace }
 
 func NewRelay(repo Repo, sender Sender, dedup Deduper, tx TxManager, cfg Config, log *slog.Logger) *Relay {
 	return &Relay{
@@ -208,8 +211,13 @@ func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel contex
 
 	pending = make([]Claimed, 0, len(shard))
 	msgs := make([]Message, 0, len(shard))
+	// same reason as the marks below, and a sharper one: a dedup that hangs
+	// rather than refuses would otherwise spend the whole tick budget here and
+	// nothing would be sent at all
+	checkCtx, cancelCheck := context.WithTimeout(ctx, dedupGrace)
+	defer cancelCheck()
 	for _, c := range shard {
-		if r.dedup.WasSent(ctx, c.ID) {
+		if r.dedup.WasSent(checkCtx, c.ID) {
 			out.sent = append(out.sent, c.ID)
 			continue
 		}
@@ -260,12 +268,18 @@ func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel contex
 		return out
 	}
 
+	// one budget for the whole marking phase: per message it would scale with
+	// shard size and could outlast the settlement it delays
+	markCtx, cancelMark := context.WithTimeout(context.WithoutCancel(ctx), dedupGrace)
+	defer cancelMark()
 	for i, c := range pending {
 		if results[i].Err != nil {
 			out.retry = append(out.retry, retryItem{claimed: c, reason: results[i].Err.Error()})
 			continue
 		}
-		r.dedup.MarkSent(ctx, c.ID)
+		// the message is already out: marking it is a post-delivery effect and
+		// must not be skipped because the send used up the tick budget
+		r.dedup.MarkSent(markCtx, c.ID)
 		out.delivered++
 		out.sent = append(out.sent, c.ID)
 	}

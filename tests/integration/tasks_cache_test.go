@@ -60,21 +60,21 @@ func TestTaskListCacheInvalidatedOnCreate(t *testing.T) {
 	assert.Len(t, listTasks(t, owner, fmt.Sprintf("team_id=%d", teamID)).Items, 2)
 }
 
-// Invalidation is a post-commit effect: a client hanging up must not leave the
-// list stale for the whole TTL.
 func TestCacheInvalidationSurvivesACancelledCaller(t *testing.T) {
 	t.Parallel()
 	c := cache.NewTasks(testRedis, time.Minute, slog.New(slog.DiscardHandler))
 	filter := domain.TaskFilter{TeamID: 1_000_000 + seq.Add(1), Limit: 20}
-	c.SetList(context.Background(), filter, []domain.Task{{ID: 1, Title: "cached"}})
-	_, ok := c.GetList(context.Background(), filter)
+	_, version, ok := c.GetList(context.Background(), filter)
+	require.False(t, ok)
+	c.SetList(context.Background(), filter, version, []domain.Task{{ID: 1, Title: "cached"}})
+	_, _, ok = c.GetList(context.Background(), filter)
 	require.True(t, ok)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	c.InvalidateTeam(ctx, filter.TeamID)
 
-	_, ok = c.GetList(context.Background(), filter)
+	_, _, ok = c.GetList(context.Background(), filter)
 	assert.False(t, ok, "a cancelled caller must not leave the list stale")
 }
 
@@ -84,13 +84,37 @@ func TestCacheInvalidationIsScopedToItsTeam(t *testing.T) {
 	c := cache.NewTasks(testRedis, time.Minute, slog.New(slog.DiscardHandler))
 	mine := domain.TaskFilter{TeamID: 2_000_000 + seq.Add(1), Limit: 20}
 	theirs := domain.TaskFilter{TeamID: 2_000_000 + seq.Add(1), Limit: 20}
-	c.SetList(context.Background(), mine, []domain.Task{{ID: 1}})
-	c.SetList(context.Background(), theirs, []domain.Task{{ID: 2}})
+	_, mineVersion, _ := c.GetList(context.Background(), mine)
+	_, theirsVersion, _ := c.GetList(context.Background(), theirs)
+	c.SetList(context.Background(), mine, mineVersion, []domain.Task{{ID: 1}})
+	c.SetList(context.Background(), theirs, theirsVersion, []domain.Task{{ID: 2}})
 
 	c.InvalidateTeam(context.Background(), mine.TeamID)
 
-	_, ok := c.GetList(context.Background(), mine)
+	_, _, ok := c.GetList(context.Background(), mine)
 	assert.False(t, ok)
-	_, ok = c.GetList(context.Background(), theirs)
+	_, _, ok = c.GetList(context.Background(), theirs)
 	assert.True(t, ok, "one team's write must not flush the whole cache")
+}
+
+func TestFillThatLostToAnInvalidationIsNotServed(t *testing.T) {
+	t.Parallel()
+	c := cache.NewTasks(testRedis, time.Minute, slog.New(slog.DiscardHandler))
+	filter := domain.TaskFilter{TeamID: 3_000_000 + seq.Add(1), Limit: 20}
+	c.InvalidateTeam(context.Background(), filter.TeamID)
+
+	_, version, ok := c.GetList(context.Background(), filter)
+	require.False(t, ok)
+
+	c.InvalidateTeam(context.Background(), filter.TeamID)
+	c.SetList(context.Background(), filter, version, []domain.Task{{ID: 1, Title: "stale"}})
+
+	_, _, ok = c.GetList(context.Background(), filter)
+	assert.False(t, ok, "the snapshot predates the invalidation and must stay invisible")
+
+	_, version, _ = c.GetList(context.Background(), filter)
+	c.SetList(context.Background(), filter, version, []domain.Task{{ID: 2, Title: "fresh"}})
+	served, _, ok := c.GetList(context.Background(), filter)
+	require.True(t, ok, "a fill that raced nothing must be served")
+	assert.Equal(t, "fresh", served[0].Title)
 }
