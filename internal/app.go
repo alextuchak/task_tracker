@@ -22,8 +22,14 @@ import (
 	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
 )
 
-func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Logger) (*App, error) {
+func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Logger) (app *App, err error) {
 	st := lifecycle.NewStarter(log, cfg.Startup)
+	ctx, stopWorkers := context.WithCancel(ctx)
+	defer func() {
+		if err != nil {
+			stopWorkers()
+		}
+	}()
 
 	db, err := persistence.NewMySQL(cfg.MySQL)
 	if err != nil {
@@ -69,7 +75,10 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	dedup := cache.NewDedup(rdb, cfg.Outbox.DedupTTL, log)
 	relay := outbox.NewRelay(outboxRepo, email.NewClient(cfg.Email, log), dedup, trManager, cfg.Outbox, log)
 	go relay.Run(ctx)
-	c.AddDrain(relay.Drain)
+	c.AddDrain(func(ctx context.Context) error {
+		stopWorkers()
+		return relay.Drain(ctx)
+	})
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Addr,
 		Handler:      transport.NewRouter(log, h, authService, teamsService, tasksService, analyticsService, commentsService, idp, userLimiter, ipLimiter, cfg.RateLimitPublic.TrustedNets()),
@@ -78,6 +87,7 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 		IdleTimeout:  cfg.HTTP.IdleTimeout,
 	}
 	c.AddDrain(func(ctx context.Context) error { return srv.Shutdown(ctx) })
+	c.AddClose(func(context.Context) error { return srv.Close() })
 
 	return &App{srv: srv, health: h, closer: c, log: log}, nil
 }
@@ -97,7 +107,6 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}()
 
-	// readiness flips to ready only after the listener is up and serving
 	a.health.SetReady()
 	a.log.Info("task-tracker started", slog.String("addr", a.srv.Addr))
 
@@ -110,8 +119,6 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) ShutDown() {
-	// first step of graceful shutdown: readiness answers 503 immediately,
-	// kubernetes drops the pod from endpoints, then drain waits for in-flight
 	a.health.SetShuttingDown()
 	a.closer.ShutDown()
 }
