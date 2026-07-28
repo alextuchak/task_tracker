@@ -93,3 +93,29 @@ func TestTheAuthSectionIsReadAsOneBlock(t *testing.T) {
 	assert.Equal(t, 7*time.Hour, cfg.Auth.Identity.TTL)
 	assert.Len(t, cfg.Auth.Identity.Secret, 32)
 }
+
+// A key nobody reads is a setting nobody applied: almost every field has a
+// default, so a typo looks exactly like the shipped value until production
+// disagrees. trusted_cidrs has no default at all — its typo empties the trust
+// list and puts the load balancer under the anonymous per-IP limit.
+func TestATypoInTheConfigIsRefused(t *testing.T) {
+	base := "mysql:\n  dsn: user:pass@tcp(127.0.0.1:3306)/db\n" +
+		"auth:\n  secret: 0123456789abcdef0123456789abcdef\n"
+	cases := map[string]string{
+		"misspelled key":        base + "rate_limit:\n  request: 5\n",
+		"misspelled nested key": base + "redis:\n  tasksttl: 90m\n",
+		"unknown whole section": base + "totally_unknown_section:\n  x: 1\n",
+		"misspelled trust list": base + "rate_limit_public:\n  trusted_cidr: [10.0.0.0/8]\n",
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "c.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+			t.Setenv("CONFIG_PATH", path)
+
+			_, err := internal.NewConfig()
+
+			require.Error(t, err, "the key was ignored and the default silently kept")
+		})
+	}
+}

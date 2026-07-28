@@ -1,7 +1,6 @@
 package comments
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -48,8 +47,7 @@ func createHandler(svc *service.Comments) http.HandlerFunc {
 			return
 		}
 		var req createCommentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		req.Body = strings.TrimSpace(req.Body)
@@ -145,8 +143,7 @@ func updateHandler(svc *service.Comments) http.HandlerFunc {
 			return
 		}
 		var req updateCommentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		req.Body = strings.TrimSpace(req.Body)

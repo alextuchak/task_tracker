@@ -112,3 +112,13 @@ func TestLoginUnknownEmail(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
+
+func TestAnOversizedBodyIsRefusedBeforeItIsRead(t *testing.T) {
+	t.Parallel()
+	huge := fmt.Sprintf(`{"email":"big@test.io","name":%q,"password":"password123"}`,
+		strings.Repeat("n", 20<<20))
+
+	resp := doJSON(t, http.MethodPost, "/api/v1/register", "", huge)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+}

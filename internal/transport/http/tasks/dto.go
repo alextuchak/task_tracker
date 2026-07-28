@@ -8,6 +8,10 @@ import (
 
 var validStatuses = []any{"todo", "in_progress", "done"}
 
+// the column is TEXT, so past 64KiB the database refuses and the caller gets a
+// 500 it can do nothing with; ozzo counts bytes, which is what the column does
+const maxDescriptionLen = 10_000
+
 type createTaskRequest struct {
 	AssigneeID  *int64 `json:"assignee_id"`
 	Title       string `json:"title"`
@@ -20,6 +24,7 @@ func (r createTaskRequest) Validate() error {
 	return v.ValidateStruct(&r,
 		v.Field(&r.TeamID, v.Required, v.Min(1)),
 		v.Field(&r.Title, v.Required, v.Length(1, 500)),
+		v.Field(&r.Description, v.Length(0, maxDescriptionLen)),
 		v.Field(&r.Status, v.In(validStatuses...)),
 	)
 }
@@ -34,6 +39,7 @@ type updateTaskRequest struct {
 func (r updateTaskRequest) Validate() error {
 	return v.ValidateStruct(&r,
 		v.Field(&r.Title, v.Required, v.Length(1, 500)),
+		v.Field(&r.Description, v.Length(0, maxDescriptionLen)),
 		v.Field(&r.Status, v.Required, v.In(validStatuses...)),
 	)
 }
