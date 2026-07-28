@@ -3,6 +3,7 @@ package integration
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -68,6 +69,21 @@ func TestCreateTaskByOutsiderMasked(t *testing.T) {
 		fmt.Sprintf(`{"team_id":%d,"title":"sneaky"}`, teamID))
 
 	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// A description the database would refuse has to be our answer, not its: left
+// unchecked it comes back as a 500 the caller can neither read nor act on. This
+// stays under the transport-level body limit so it is the field that is judged.
+func TestAnOversizedDescriptionIsRejectedNotCrashed(t *testing.T) {
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-desc"))
+	teamID := createTeam(t, owner, "t-desc")
+
+	resp := doJSON(t, http.MethodPost, "/api/v1/tasks", owner,
+		fmt.Sprintf(`{"team_id":%d,"title":"x","description":%q}`, teamID, strings.Repeat("d", 20_000)))
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.NotContains(t, readBody(t, resp), "internal")
 }
 
 func TestCreateTaskAssigneeMustBeMember(t *testing.T) {

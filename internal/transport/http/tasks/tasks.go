@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -47,8 +46,7 @@ func createHandler(svc *service.Tasks) http.HandlerFunc {
 			return
 		}
 		var req createTaskRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		if err := req.Validate(); err != nil {
@@ -152,8 +150,7 @@ func updateHandler(svc *service.Tasks) http.HandlerFunc {
 			return
 		}
 		var req updateTaskRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		if err := req.Validate(); err != nil {

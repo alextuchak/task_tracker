@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
+	"gopkg.in/yaml.v3"
 )
 
 func NewConfig() (*Config, error) {
@@ -24,8 +25,23 @@ func NewConfig() (*Config, error) {
 	if path == "" {
 		path = "config.yaml"
 	}
-	if err := cleanenv.ReadConfig(path, &cfg); err != nil {
+	// #nosec G304,G703 -- CONFIG_PATH is the operator's own, same trust as argv
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open config %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// strict on purpose: nearly every field carries a default, so a misspelled
+	// key would otherwise read exactly like the value the operator wrote
+	dec := yaml.NewDecoder(f)
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("read config %s: %w", path, err)
+	}
+	// env vars and the defaults for whatever the file left unset
+	if err := cleanenv.ReadEnv(&cfg); err != nil {
+		return nil, fmt.Errorf("read env: %w", err)
 	}
 	return &cfg, nil
 }

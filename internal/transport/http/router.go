@@ -54,6 +54,10 @@ func recoverer(log *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// a task description tops out at 10KiB, and JSON escaping cannot inflate that
+// past this; nothing else the API accepts comes close
+const maxRequestBody = 64 << 10
+
 func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 	teamsSvc *service.Teams, tasksSvc *service.Tasks, analyticsSvc *service.Analytics,
 	commentsSvc *service.Comments,
@@ -69,6 +73,7 @@ func NewRouter(log *slog.Logger, h *health.Health, authSvc *service.Auth,
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(middleware.LimitBody(maxRequestBody))
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RateLimitByIP(ipLimiter, trustedNets))
 			r.Mount("/", auth.Routes(authSvc))

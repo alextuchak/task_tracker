@@ -1,7 +1,6 @@
 package teams
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -41,8 +40,7 @@ func createHandler(svc *service.Teams) http.HandlerFunc {
 			return
 		}
 		var req createTeamRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		if err := req.Validate(); err != nil {
@@ -119,8 +117,7 @@ func inviteHandler(svc *service.Teams) http.HandlerFunc {
 			return
 		}
 		var req inviteRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		if err := req.Validate(); err != nil {

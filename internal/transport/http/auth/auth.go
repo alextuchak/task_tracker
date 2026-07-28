@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"task_tracker/internal/domain"
@@ -32,8 +31,7 @@ func Routes(svc *service.Auth) chi.Router {
 func registerHandler(svc *service.Auth) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req registerRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		if err := req.Validate(); err != nil {
@@ -67,8 +65,7 @@ func registerHandler(svc *service.Auth) http.HandlerFunc {
 func loginHandler(svc *service.Auth) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpkit.WriteError(w, http.StatusBadRequest, "invalid json")
+		if !httpkit.DecodeJSON(w, r, &req) {
 			return
 		}
 		if err := req.Validate(); err != nil {

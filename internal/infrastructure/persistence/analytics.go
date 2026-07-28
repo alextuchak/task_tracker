@@ -20,25 +20,29 @@ type AnalyticsRepo struct {
 
 func (r *AnalyticsRepo) TeamStats(ctx context.Context, afterID int64, limit int) ([]domain.TeamStats, error) {
 	rows, err := r.getter.DefaultTrOrDB(ctx, r.db).QueryContext(ctx, `
-		SELECT t.id,
-		       t.name,
+		WITH page AS (
+		    SELECT id, name FROM teams WHERE id > ? ORDER BY id LIMIT ?
+		)
+		SELECT p.id,
+		       p.name,
 		       COALESCE(m.members, 0)      AS members,
 		       COALESCE(d.done_last_7d, 0) AS done_last_7d
-		FROM teams t
+		FROM page p
 		LEFT JOIN (
-		    SELECT team_id, COUNT(*) AS members
-		    FROM team_members
-		    GROUP BY team_id
-		) m ON m.team_id = t.id
+		    SELECT mm.team_id, COUNT(*) AS members
+		    FROM team_members mm
+		    JOIN page pm ON pm.id = mm.team_id
+		    GROUP BY mm.team_id
+		) m ON m.team_id = p.id
 		LEFT JOIN (
-		    SELECT team_id, COUNT(*) AS done_last_7d
-		    FROM tasks
-		    WHERE status = 'done' AND completed_at >= NOW() - INTERVAL 7 DAY
-		    GROUP BY team_id
-		) d ON d.team_id = t.id
-		WHERE t.id > ?
-		ORDER BY t.id
-		LIMIT ?`, afterID, limit)
+		    SELECT dd.team_id, COUNT(*) AS done_last_7d
+		    FROM tasks dd
+		    JOIN page pd ON pd.id = dd.team_id
+		    WHERE dd.status = 'done'
+		      AND dd.completed_at >= NOW() - INTERVAL 7 DAY
+		    GROUP BY dd.team_id
+		) d ON d.team_id = p.id
+		ORDER BY p.id`, afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("team stats: %w", err)
 	}
