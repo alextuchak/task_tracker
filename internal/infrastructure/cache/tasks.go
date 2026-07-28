@@ -23,7 +23,12 @@ type Tasks struct {
 }
 
 func (c *Tasks) GetList(ctx context.Context, f domain.TaskFilter) ([]domain.Task, bool) {
-	raw, err := c.rdb.Get(ctx, listKey(f)).Bytes()
+	version, err := c.version(ctx, f.TeamID)
+	if err != nil {
+		c.log.Warn("tasks cache version get failed", slog.Any("error", err))
+		return nil, false
+	}
+	raw, err := c.rdb.Get(ctx, listKey(f, version)).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return nil, false
 	}
@@ -33,6 +38,8 @@ func (c *Tasks) GetList(ctx context.Context, f domain.TaskFilter) ([]domain.Task
 	}
 	var tasks []domain.Task
 	if err := json.Unmarshal(raw, &tasks); err != nil {
+		c.log.Error("tasks cache entry undecodable, falling back to the database",
+			slog.Int64("team_id", f.TeamID), slog.Any("error", err))
 		return nil, false
 	}
 	return tasks, true
@@ -41,28 +48,41 @@ func (c *Tasks) GetList(ctx context.Context, f domain.TaskFilter) ([]domain.Task
 func (c *Tasks) SetList(ctx context.Context, f domain.TaskFilter, tasks []domain.Task) {
 	raw, err := json.Marshal(tasks)
 	if err != nil {
+		c.log.Error("tasks cache entry unencodable, caching disabled for this key",
+			slog.Int64("team_id", f.TeamID), slog.Any("error", err))
 		return
 	}
-	if err := c.rdb.Set(ctx, listKey(f), raw, c.ttl).Err(); err != nil {
+	version, err := c.version(ctx, f.TeamID)
+	if err != nil {
+		c.log.Warn("tasks cache version get failed", slog.Any("error", err))
+		return
+	}
+	if err := c.rdb.Set(ctx, listKey(f, version), raw, c.ttl).Err(); err != nil {
 		c.log.Warn("tasks cache set failed", slog.Any("error", err))
 	}
 }
 
 func (c *Tasks) InvalidateTeam(ctx context.Context, teamID int64) {
-	pattern := fmt.Sprintf("tasks:%d:*", teamID)
-	iter := c.rdb.Scan(ctx, 0, pattern, 0).Iterator()
-	for iter.Next(ctx) {
-		if err := c.rdb.Del(ctx, iter.Val()).Err(); err != nil {
-			c.log.Warn("tasks cache del failed", slog.Any("error", err))
-		}
-	}
-	if err := iter.Err(); err != nil {
-		c.log.Warn("tasks cache invalidate failed",
+	ctx = context.WithoutCancel(ctx)
+	if err := c.rdb.Incr(ctx, versionKey(teamID)).Err(); err != nil {
+		c.log.Error("tasks cache invalidate failed, the list is stale until it expires",
 			slog.Int64("team_id", teamID), slog.Any("error", err))
 	}
 }
 
-func listKey(f domain.TaskFilter) string {
+func (c *Tasks) version(ctx context.Context, teamID int64) (int64, error) {
+	version, err := c.rdb.Get(ctx, versionKey(teamID)).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return version, err
+}
+
+func versionKey(teamID int64) string {
+	return fmt.Sprintf("tasks:ver:%d", teamID)
+}
+
+func listKey(f domain.TaskFilter, version int64) string {
 	status := ""
 	if f.Status != nil {
 		status = string(*f.Status)
@@ -71,5 +91,5 @@ func listKey(f domain.TaskFilter) string {
 	if f.AssigneeID != nil {
 		assignee = *f.AssigneeID
 	}
-	return fmt.Sprintf("tasks:%d:%s:%d:%d:%d", f.TeamID, status, assignee, f.AfterID, f.Limit)
+	return fmt.Sprintf("tasks:%d:%d:%s:%d:%d:%d", f.TeamID, version, status, assignee, f.AfterID, f.Limit)
 }

@@ -2,6 +2,7 @@ package ratelimit
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -30,7 +31,12 @@ type Limiter struct {
 func (l *Limiter) Allow(ctx context.Context, key string) (bool, time.Duration) {
 	res, err := l.rl.Allow(ctx, "rate:"+key, l.limit)
 	if err != nil {
-		l.log.Warn("rate limiter unavailable, failing open", slog.Any("error", err))
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return true, 0
+		}
+		unavailableTotal.Inc()
+		l.log.Warn("rate limiter unavailable, failing open",
+			slog.String("key", key), slog.Any("error", err))
 		return true, 0
 	}
 	if res.Allowed == 0 {

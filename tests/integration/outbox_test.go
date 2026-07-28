@@ -37,6 +37,10 @@ type stubSender struct {
 	failBatch func(msgs []outbox.Message) error
 	// truncate returns fewer results than messages — a provider contract breach
 	truncate bool
+	// panics stands in for a provider client blowing up mid-call
+	panics atomic.Bool
+	// panicOn blows up only for one recipient, the poison-message shape
+	panicOn string
 	// hold makes the provider slow, so the caller's context can end the call
 	hold         time.Duration
 	abortedByCtx bool
@@ -78,6 +82,14 @@ func (s *stubSender) waitEntered(t *testing.T) {
 func newStubSender() *stubSender { return &stubSender{sent: map[string]int{}} }
 
 func (s *stubSender) SendBatch(ctx context.Context, msgs []outbox.Message) ([]outbox.SendResult, error) {
+	if s.panics.Load() {
+		panic("provider client exploded")
+	}
+	for _, m := range msgs {
+		if s.panicOn != "" && m.Recipient == s.panicOn {
+			panic("provider client exploded on " + m.Recipient)
+		}
+	}
 	s.mu.Lock()
 	s.calls++
 	s.maxBatch = max(s.maxBatch, len(msgs))
@@ -652,6 +664,49 @@ func storedError(t *testing.T, recipient string) string {
 	require.NoError(t, testDB.QueryRow(
 		`SELECT last_error FROM email_outbox WHERE recipient = ?`, recipient).Scan(&stored))
 	return stored
+}
+
+// A panic in a shard goroutine reaches no caller: without a recover it takes
+// the whole process down, API included, on nothing worse than a malformed
+// provider response.
+func TestOutboxSurvivesAPanickingProvider(t *testing.T) {
+	resetOutbox(t)
+	rcpt := "panic@outbox.io"
+	enqueueRow(t, rcpt)
+	sender := newStubSender()
+	sender.panics.Store(true)
+	h := startRelay(t, sender, fastConfig(8))
+
+	require.Eventually(t, func() bool { return h.logs.has("outbox shard panicked") },
+		5*time.Second, 20*time.Millisecond, "the panic must be reported, not fatal")
+	require.Eventually(t, func() bool { return outboxAttempts(t, rcpt) >= 1 },
+		5*time.Second, 20*time.Millisecond,
+		"the batch must spend an attempt: settling nothing re-claims it forever")
+
+	sender.panics.Store(false)
+
+	require.Eventually(t, func() bool { return outboxCount(t, rcpt) == 0 },
+		20*time.Second, 50*time.Millisecond,
+		"the message must survive the panic and go out once the provider recovers")
+	assert.Equal(t, 1, sender.count(rcpt))
+}
+
+func TestOutboxPoisonMessageDoesNotWedgeTheQueue(t *testing.T) {
+	resetOutbox(t)
+	poison := "poison@outbox.io"
+	behind := "behind@outbox.io"
+	enqueueRow(t, poison)
+	enqueueRow(t, behind)
+	sender := newStubSender()
+	sender.panicOn = poison
+	startRelay(t, sender, fastConfig(2))
+
+	require.Eventually(t, func() bool { return outboxCount(t, behind) == 0 },
+		20*time.Second, 50*time.Millisecond,
+		"a poison message must not hold the rest of the queue hostage")
+	require.Eventually(t, func() bool { return outboxStatus(t, poison) == "failed" },
+		20*time.Second, 50*time.Millisecond,
+		"a message that keeps panicking must spend its attempts and dead-letter")
 }
 
 func TestOutboxDedupSuppressesResend(t *testing.T) {

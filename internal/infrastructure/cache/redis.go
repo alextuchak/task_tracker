@@ -1,10 +1,16 @@
 package cache
 
 import (
+	"context"
+	"errors"
+
 	"github.com/redis/go-redis/v9"
 )
 
-// NewRedis only builds the client; liveness is verified by the starter.
+func isCancelled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
 func NewRedis(cfg Config) *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr:          cfg.Addr,
