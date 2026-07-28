@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"task_tracker/internal/infrastructure/persistence"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
 	"github.com/avito-tech/go-transaction-manager/trm/v2/manager"
@@ -587,6 +589,69 @@ func TestOutboxDrainReportsWhenItRunsOutOfTime(t *testing.T) {
 	require.Eventually(t, func() bool { return outboxCount(t, rcpt) == 0 },
 		10*time.Second, 20*time.Millisecond,
 		"a drain timeout must not lose the message — the tick settles regardless")
+}
+
+// last_error is sliced by bytes into a utf8mb4 column. An error message whose
+// 1024th byte falls inside a character produces invalid UTF-8, MySQL rejects
+// the whole settlement, and the row is re-claimed and re-failed forever.
+func TestOutboxTruncatesTheErrorOnARuneBoundary(t *testing.T) {
+	resetOutbox(t)
+	rcpt := "runes@outbox.io"
+	enqueueRow(t, rcpt)
+	sender := newStubSender()
+	// three-byte runes stay split under any power-of-two limit, unlike two-byte
+	// ones, which land on a boundary as soon as the prefix changes
+	splitAtTheLimit := strings.Repeat("日", 700)
+	require.False(t, utf8.ValidString(splitAtTheLimit[:1024]),
+		"the fixture must actually split a character at the limit")
+	sender.fail = func(r string) error {
+		if r == rcpt {
+			return errors.New(splitAtTheLimit)
+		}
+		return nil
+	}
+	startRelay(t, sender, fastConfig(5))
+
+	require.Eventually(t, func() bool { return outboxAttempts(t, rcpt) >= 1 },
+		5*time.Second, 20*time.Millisecond,
+		"the row must be rescheduled, not wedged on an encoding error")
+
+	assert.True(t, utf8.ValidString(storedError(t, rcpt)), "last_error must stay valid UTF-8")
+	assert.True(t, strings.HasPrefix(splitAtTheLimit, storedError(t, rcpt)),
+		"what is kept must be a prefix of the real error, not a placeholder")
+	assert.Greater(t, len(storedError(t, rcpt)), 1000,
+		"truncation must keep as much of the error as the limit allows")
+}
+
+// The dead-letter write truncates too, and it is the worse one to get wrong:
+// a rejected settlement leaves the row to be re-claimed and re-failed forever.
+func TestOutboxTruncatesTheErrorWhenDeadLettering(t *testing.T) {
+	resetOutbox(t)
+	rcpt := "runes-dead@outbox.io"
+	enqueueRow(t, rcpt)
+	sender := newStubSender()
+	splitAtTheLimit := strings.Repeat("日", 700)
+	sender.fail = func(r string) error {
+		if r == rcpt {
+			return errors.New(splitAtTheLimit)
+		}
+		return nil
+	}
+	startRelay(t, sender, fastConfig(1))
+
+	require.Eventually(t, func() bool { return outboxStatus(t, rcpt) == "failed" },
+		5*time.Second, 20*time.Millisecond,
+		"the row must reach the dead letter state, not wedge on an encoding error")
+
+	assert.True(t, utf8.ValidString(storedError(t, rcpt)))
+}
+
+func storedError(t *testing.T, recipient string) string {
+	t.Helper()
+	var stored string
+	require.NoError(t, testDB.QueryRow(
+		`SELECT last_error FROM email_outbox WHERE recipient = ?`, recipient).Scan(&stored))
+	return stored
 }
 
 func TestOutboxDedupSuppressesResend(t *testing.T) {

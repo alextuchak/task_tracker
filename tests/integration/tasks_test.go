@@ -169,6 +169,77 @@ func TestUpdateWritesHistoryAndCompletedAt(t *testing.T) {
 	assert.NotEmpty(t, groups["created"])
 }
 
+// A task can be created already done. Nothing sets completed_at on that path,
+// so the row is invisible to the "done in the last 7 days" report forever.
+func TestCreateTaskAsDoneIsCountedByTheReport(t *testing.T) {
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-cd-owner"))
+	teamID := createTeam(t, owner, "t-cd")
+
+	resp := doJSON(t, http.MethodPost, "/api/v1/tasks", owner,
+		fmt.Sprintf(`{"team_id":%d,"title":"born done","status":"done"}`, teamID))
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+	var task taskDTO
+	decodeJSON(t, readBody(t, resp), &task)
+	require.NotNil(t, task.CompletedAt, "a task created as done must carry a completion time")
+
+	admin := makeAdmin(t, mail("t-cd-admin"))
+	for _, s := range fetchTeamStats(t, admin) {
+		if s.ID == teamID {
+			assert.Equal(t, int64(1), s.DoneLast7Days)
+			return
+		}
+	}
+	t.Fatal("team missing from the report")
+}
+
+func TestUpdateKeepsCompletedAtOnRepeatedDone(t *testing.T) {
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-cc-owner"))
+	teamID := createTeam(t, owner, "t-cc")
+	task := createTask(t, owner, teamID, "task")
+
+	require.NotNil(t, updateTask(t, owner, task.ID, `{"title":"task","status":"done"}`).CompletedAt)
+	_, err := testDB.Exec(
+		`UPDATE tasks SET completed_at = NOW() - INTERVAL 30 DAY WHERE id = ?`, task.ID)
+	require.NoError(t, err)
+
+	updateTask(t, owner, task.ID, `{"title":"renamed","status":"done"}`)
+
+	admin := makeAdmin(t, mail("t-cc-admin"))
+	for _, s := range fetchTeamStats(t, admin) {
+		if s.ID == teamID {
+			assert.Zero(t, s.DoneLast7Days,
+				"editing a done task must not drag it back into the 7-day window")
+			return
+		}
+	}
+	t.Fatal("team missing from the report")
+}
+
+func TestUpdateClearsCompletedAtOnReopen(t *testing.T) {
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-cr-owner"))
+	teamID := createTeam(t, owner, "t-cr")
+	task := createTask(t, owner, teamID, "task")
+	require.NotNil(t, updateTask(t, owner, task.ID, `{"title":"task","status":"done"}`).CompletedAt)
+
+	reopened := updateTask(t, owner, task.ID, `{"title":"task","status":"todo"}`)
+
+	assert.Nil(t, reopened.CompletedAt, "a reopened task is not done")
+}
+
+func updateTask(t *testing.T, bearer string, id int64, body string) taskDTO {
+	t.Helper()
+	resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/v1/tasks/%d", id), bearer, body)
+	payload := readBody(t, resp)
+	require.Equal(t, http.StatusOK, resp.StatusCode, payload)
+	var task taskDTO
+	decodeJSON(t, payload, &task)
+	return task
+}
+
 func TestUpdateByOutsiderMasked(t *testing.T) {
 	t.Parallel()
 	owner := registerAndLogin(t, mail("t-upd-owner"))
