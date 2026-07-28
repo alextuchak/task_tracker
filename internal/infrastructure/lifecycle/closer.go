@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -25,8 +26,13 @@ func (c *CloserConfig) Validate() error {
 	if c.Total <= 0 || c.Phase <= 0 {
 		return fmt.Errorf("timeouts must be positive, got total: %s, phase: %s", c.Total, c.Phase)
 	}
-	if c.Phase > c.Total {
-		return fmt.Errorf("phase timeout %s must not exceed total %s", c.Phase, c.Total)
+	// drain and release draw on the same total in turn, so a phase worth more
+	// than half of it can leave the other with an expired context
+	// halving rather than doubling: 2*Phase overflows int64 at durations
+	// time.ParseDuration will happily accept
+	if c.Phase > c.Total/2 {
+		return fmt.Errorf("phase timeout %s leaves no room for the second phase within total %s",
+			c.Phase, c.Total)
 	}
 	return nil
 }
@@ -83,6 +89,17 @@ func (c *Closer) runPhase(ctx context.Context, name string, f []func(context.Con
 
 	for _, f := range f {
 		go func(f func(context.Context) error) {
+			// closers run last, with nothing above them to recover: a panic
+			// here would abort the shutdown instead of finishing it
+			defer func() {
+				if rec := recover(); rec != nil {
+					c.log.Error("closer panicked", slog.String("phase", name),
+						slog.Any("panic", rec), slog.String("stack", string(debug.Stack())))
+					// the phase counts answers, and this closer owes one; the
+					// failure itself is already in the line above
+					errs <- nil
+				}
+			}()
 			errs <- f(ctx)
 		}(f)
 	}
