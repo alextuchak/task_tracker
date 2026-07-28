@@ -27,10 +27,15 @@ type TaskRepo struct {
 func (r *TaskRepo) Create(ctx context.Context, t domain.Task) (int64, error) {
 	conn := r.getter.DefaultTrOrDB(ctx, r.db)
 
+	var completedAt *time.Time
+	if t.Status == domain.TaskStatusDone {
+		now := time.Now()
+		completedAt = &now
+	}
 	res, err := conn.ExecContext(ctx,
-		`INSERT INTO tasks (team_id, title, description, status, assignee_id, created_by)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		t.TeamID, t.Title, t.Description, t.Status, t.AssigneeID, t.CreatedBy)
+		`INSERT INTO tasks (team_id, title, description, status, assignee_id, created_by, completed_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		t.TeamID, t.Title, t.Description, t.Status, t.AssigneeID, t.CreatedBy, completedAt)
 	var mysqlErr *mysqldrv.MySQLError
 	if errors.As(err, &mysqlErr) && mysqlErr.Number == foreignKeyViolationCode {
 		return 0, domain.ErrNotFound

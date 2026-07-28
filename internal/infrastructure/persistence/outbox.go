@@ -7,6 +7,7 @@ import (
 	"strings"
 	"task_tracker/internal/infrastructure/outbox"
 	"time"
+	"unicode/utf8"
 
 	trmsql "github.com/avito-tech/go-transaction-manager/drivers/sql/v2"
 )
@@ -96,7 +97,7 @@ func (r *OutboxRepo) Reschedule(ctx context.Context, items []outbox.Retry) error
 	b.WriteString(` END) MICROSECOND), last_error = CASE id`)
 	for _, it := range items {
 		b.WriteString(" WHEN ? THEN ?")
-		args = append(args, it.ID, it.LastErr[:min(len(it.LastErr), maxErrLen)])
+		args = append(args, it.ID, truncateUTF8(it.LastErr, maxErrLen))
 	}
 
 	query, idArgs := inClause(b.String()+" END WHERE id IN ", ids)
@@ -119,7 +120,7 @@ func (r *OutboxRepo) MarkFailed(ctx context.Context, items []outbox.Failure) err
 	ids := make([]int64, len(items))
 	for i, it := range items {
 		b.WriteString(" WHEN ? THEN ?")
-		args = append(args, it.ID, it.LastErr[:min(len(it.LastErr), maxErrLen)])
+		args = append(args, it.ID, truncateUTF8(it.LastErr, maxErrLen))
 		ids[i] = it.ID
 	}
 
@@ -143,6 +144,18 @@ func (r *OutboxRepo) OldestPendingAge(ctx context.Context) (time.Duration, error
 		return 0, nil
 	}
 	return time.Duration(micros.Int64) * time.Microsecond, nil
+}
+
+// truncateUTF8 cuts on a rune boundary: last_error is a utf8mb4 column, and a
+// byte-sliced multibyte character makes MySQL reject the whole settlement.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return strings.ToValidUTF8(s, "")
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return strings.ToValidUTF8(s[:maxBytes], "")
 }
 
 func inClause(prefix string, ids []int64) (string, []any) {
