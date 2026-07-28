@@ -5,7 +5,9 @@ import (
 	"path/filepath"
 	"task_tracker/internal"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,4 +77,19 @@ func TestDefaultsAloneAreConsistent(t *testing.T) {
 
 	require.NoError(t, cfg.Validate(),
 		"the shutdown defaults have to fit the outbox defaults without a config file")
+}
+
+func TestTheAuthSectionIsReadAsOneBlock(t *testing.T) {
+	body := "mysql:\n  dsn: user:pass@tcp(127.0.0.1:3306)/db\n" +
+		"auth:\n  secret: 0123456789abcdef0123456789abcdef\n  ttl: 7h\n  password_cost: 12\n"
+	path := filepath.Join(t.TempDir(), "auth.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	t.Setenv("CONFIG_PATH", path)
+
+	cfg, err := internal.NewConfig()
+	require.NoError(t, err)
+
+	assert.Equal(t, 12, cfg.Auth.PasswordCost)
+	assert.Equal(t, 7*time.Hour, cfg.Auth.Identity.TTL)
+	assert.Len(t, cfg.Auth.Identity.Secret, 32)
 }

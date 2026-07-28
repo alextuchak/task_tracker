@@ -8,6 +8,7 @@ on:
 env:
   GO_VERSION: "1.25"
   GOLANGCI_LINT_VERSION: v2.12.2
+  GOOSE_VERSION: v3.26.0
 
 jobs:
   lint:
@@ -68,9 +69,40 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - run: go test -race -count=1 ./tests/integration/...
 
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: tasks
+        ports: ["3306:3306"]
+        # --silent exits 0 on access-denied, which the entrypoint's temporary
+        # server answers with while TCP is not up yet; go over TCP and read the
+        # answer instead
+        options: >-
+          --health-cmd="mysql -h 127.0.0.1 -uroot -proot -e 'SELECT 1'"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+          --health-start-period=10s
+    env:
+      GOOSE_DRIVER: mysql
+      GOOSE_DBSTRING: "root:root@tcp(127.0.0.1:3306)/tasks?parseTime=true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: go install github.com/pressly/goose/v3/cmd/goose@${{ env.GOOSE_VERSION }}
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends mysql-client
+      - name: migrations round-trip
+        run: ./scripts/migrations-round-trip.sh
+
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint, govulncheck, gosec, test-unit, test-integration]
+    needs: [lint, govulncheck, gosec, test-unit, test-integration, migrations]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -57,7 +57,7 @@ func NewApp(ctx context.Context, c *lifecycle.Closer, cfg *Config, log *slog.Log
 	getter := trmsql.DefaultCtxGetter
 	trManager := manager.Must(trmsql.NewDefaultFactory(db))
 
-	idp := identity.NewProvider(cfg.Auth)
+	idp := identity.NewProvider(cfg.Auth.Identity)
 	userRepo := persistence.NewUserRepo(db, getter)
 	authService := service.NewAuth(userRepo, idp, cfg.Auth.PasswordCost)
 	teamRepo := persistence.NewTeamRepo(db, getter)

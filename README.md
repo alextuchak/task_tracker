@@ -7,7 +7,6 @@ Team task management REST API — role-based access, a transactional outbox, and
 Go · chi · MySQL · Redis · Prometheus · Grafana · testcontainers
 
 [![CI](https://img.shields.io/github/actions/workflow/status/alextuchak/task_tracker/ci.yaml?style=flat-square&label=ci)](https://github.com/alextuchak/task_tracker/actions/workflows/ci.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/alextuchak/task_tracker?style=flat-square)](https://goreportcard.com/report/github.com/alextuchak/task_tracker)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/alextuchak/task_tracker?style=flat-square)](go.mod)
 [![Release](https://img.shields.io/github/v/release/alextuchak/task_tracker?style=flat-square)](https://github.com/alextuchak/task_tracker/releases)
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
@@ -227,8 +226,8 @@ task swagger             # regenerate OpenAPI from annotations
 task pre-commit-install  # hooks: fmt, lint, tidy, tests, swagger freshness
 ```
 
-CI runs five parallel jobs on every PR commit — `lint` (golangci-lint), `govulncheck`,
-`gosec`, `test-unit`, `test-integration` — and merges to `main` release automatically
+CI runs six parallel jobs on every PR commit — `lint` (golangci-lint), `govulncheck`,
+`gosec`, `test-unit`, `test-integration`, `migrations` — and merges to `main` release automatically
 via semantic-release (conventional commits → semver tag + changelog).
 
 ## Project layout
