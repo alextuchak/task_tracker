@@ -24,8 +24,8 @@ redis:
   tasks_ttl: 5m
 
 shutdown:
-  total: 20s
-  phase: 10s
+  total: 30s
+  phase: 15s
 
 health:
   check_timeout: 2s

@@ -16,8 +16,8 @@ type TaskRepository interface {
 }
 
 type TaskListCache interface {
-	GetList(ctx context.Context, f domain.TaskFilter) ([]domain.Task, bool)
-	SetList(ctx context.Context, f domain.TaskFilter, tasks []domain.Task)
+	GetList(ctx context.Context, f domain.TaskFilter) ([]domain.Task, int64, bool)
+	SetList(ctx context.Context, f domain.TaskFilter, version int64, tasks []domain.Task)
 	InvalidateTeam(ctx context.Context, teamID int64)
 }
 
@@ -83,14 +83,15 @@ func (s *Tasks) List(ctx context.Context, actorID int64, f domain.TaskFilter) ([
 	if err := s.authz.RequireTeamRole(ctx, actorID, f.TeamID, domain.TeamRoleMember); err != nil {
 		return nil, err
 	}
-	if cached, ok := s.cache.GetList(ctx, f); ok {
+	cached, version, ok := s.cache.GetList(ctx, f)
+	if ok {
 		return cached, nil
 	}
 	tasks, err := s.tasks.List(ctx, f)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
 	}
-	s.cache.SetList(ctx, f, tasks)
+	s.cache.SetList(ctx, f, version, tasks)
 	return tasks, nil
 }
 
