@@ -84,6 +84,24 @@ func TestCreateTaskAssigneeMustBeMember(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+// The check on create is worth nothing on its own: the same task can be handed
+// to a stranger a second later, and the foreign key will not object because the
+// assignee is a real user — just not one on this team.
+func TestUpdateTaskAssigneeMustBeMember(t *testing.T) {
+	t.Parallel()
+	owner := registerAndLogin(t, mail("t-uasg-owner"))
+	strangerEmail := mail("t-uasg-stranger")
+	registerAndLogin(t, strangerEmail)
+	teamID := createTeam(t, owner, "t-uasg")
+	task := createTask(t, owner, teamID, "assigned to nobody")
+
+	strangerID := meID(t, login(t, strangerEmail, "password123"))
+	resp := doJSON(t, http.MethodPut, fmt.Sprintf("/api/v1/tasks/%d", task.ID), owner,
+		fmt.Sprintf(`{"title":"x","status":"todo","assignee_id":%d}`, strangerID))
+
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 func TestListFiltersAndPagination(t *testing.T) {
 	t.Parallel()
 	owner := registerAndLogin(t, mail("t-list"))
