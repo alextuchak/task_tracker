@@ -34,7 +34,7 @@ type Config struct {
 	AppName         string                  `env-default:"task-tracker"`
 	AppVersion      string                  `env:"APP_VERSION" env-default:"dev"`
 	Env             string                  `env:"ENV" env-default:"local"`
-	Auth            identity.Config         `yaml:"auth"`
+	Auth            AuthConfig              `yaml:"auth"`
 	MySQL           persistence.Config      `yaml:"mysql"`
 	RateLimitPublic ratelimit.Config        `yaml:"rate_limit_public"`
 	RateLimit       ratelimit.Config        `yaml:"rate_limit"`
@@ -45,6 +45,27 @@ type Config struct {
 	Shutdown        lifecycle.CloserConfig  `yaml:"shutdown"`
 	Startup         lifecycle.StarterConfig `yaml:"startup"`
 	Health          health.Config           `yaml:"health"`
+}
+
+const (
+	minPasswordCost = 10
+	maxPasswordCost = 15
+)
+
+type AuthConfig struct {
+	Identity     identity.Config `yaml:",inline"`
+	PasswordCost int             `yaml:"password_cost" env-default:"10"`
+}
+
+func (c *AuthConfig) Validate() error {
+	if err := c.Identity.Validate(); err != nil {
+		return err
+	}
+	if c.PasswordCost < minPasswordCost || c.PasswordCost > maxPasswordCost {
+		return fmt.Errorf("password_cost must be %d..%d, got: %d",
+			minPasswordCost, maxPasswordCost, c.PasswordCost)
+	}
+	return nil
 }
 
 type HTTPConfig struct {

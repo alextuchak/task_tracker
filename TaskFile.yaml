@@ -70,6 +70,10 @@ tasks:
     cmds:
       - goose -dir migrations mysql {{.GOOSE_DSN}} status
     desc: "Show migration status"
+  migrate-round-trip:
+    cmds:
+      - GOOSE_DBSTRING=tasks:tasks@tcp(localhost:3306)/tasks?parseTime=true ./scripts/migrations-round-trip.sh
+    desc: "Roll every migration down and up again and diff the schema (wants an empty database)"
 
   install-swag:
     cmds:
