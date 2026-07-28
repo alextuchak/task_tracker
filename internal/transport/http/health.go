@@ -1,8 +1,11 @@
 package http
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"task_tracker/internal/infrastructure/health"
+	"task_tracker/internal/transport/http/httpkit"
 )
 
 // livezHandler only proves the process is alive — never gated by the ready
@@ -12,15 +15,18 @@ func livezHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
-// readyzHandler answers 503 as soon as readiness fails so kubernetes drops
-// the pod from endpoints; the actual logic lives in the health package.
-func readyzHandler(h *health.Health) http.HandlerFunc {
+func readyzHandler(h *health.Health, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := h.CheckReadiness(r.Context()); err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
+		err := h.CheckReadiness(r.Context())
+		switch {
+		case err == nil:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		case errors.Is(err, health.ErrStarting), errors.Is(err, health.ErrShuttingDown):
+			httpkit.WriteError(w, http.StatusServiceUnavailable, err.Error())
+		default:
+			log.Error("readiness check failed", slog.Any("error", err))
+			httpkit.WriteError(w, http.StatusServiceUnavailable, "not ready")
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
 	}
 }

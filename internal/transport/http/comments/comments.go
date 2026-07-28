@@ -66,7 +66,7 @@ func createHandler(svc *service.Comments) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -113,7 +113,7 @@ func listHandler(svc *service.Comments) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -163,7 +163,7 @@ func updateHandler(svc *service.Comments) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -201,7 +201,7 @@ func deleteHandler(svc *service.Comments) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }

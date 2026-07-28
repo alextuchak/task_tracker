@@ -54,6 +54,24 @@ func TestMeReturnsCurrentUser(t *testing.T) {
 	assert.Equal(t, "Ada", got.Name)
 }
 
+// A deleted account with a still-valid token used to reach the default arm of
+// the handler switch and answer 500, so an expected state produced a permanent
+// stream of server errors and error-rate noise.
+func TestMeAfterTheAccountIsGone(t *testing.T) {
+	t.Parallel()
+	email := mail("me-gone")
+	register(t, email, "Ada", "password123")
+	bearer := login(t, email, "password123")
+	_, err := testDB.Exec(`DELETE FROM users WHERE email = ?`, email)
+	require.NoError(t, err)
+
+	resp := doJSON(t, http.MethodGet, "/api/v1/me", bearer, "")
+
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	assert.Contains(t, readBody(t, resp), "user no longer exists",
+		"a rejected token would also be 401")
+}
+
 func TestMeWithoutToken(t *testing.T) {
 	t.Parallel()
 	resp := doJSON(t, http.MethodGet, "/api/v1/me", "", "")

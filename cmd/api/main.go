@@ -34,6 +34,9 @@ func main() {
 		os.Exit(1)
 	}
 	log := logger.NewLog(cfg.Env, cfg.AppName, cfg.AppVersion)
+	// httpkit logs every unhandled 500 through the package-level logger, and
+	// this also redirects the stdlib log that net/http writes its own errors to
+	slog.SetDefault(log)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	c := lifecycle.NewCloser(log, cfg.Shutdown)

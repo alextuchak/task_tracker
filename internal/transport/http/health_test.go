@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"task_tracker/internal/infrastructure/health"
@@ -14,7 +15,7 @@ func TestReadyzNotReady(t *testing.T) {
 	h := health.New(health.Config{CheckTimeout: time.Second})
 
 	rec := httptest.NewRecorder()
-	readyzHandler(h)(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	readyzHandler(h, slog.New(slog.DiscardHandler))(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)
@@ -26,7 +27,7 @@ func TestReadyzReady(t *testing.T) {
 	h.SetReady()
 
 	rec := httptest.NewRecorder()
-	readyzHandler(h)(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	readyzHandler(h, slog.New(slog.DiscardHandler))(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
@@ -39,7 +40,7 @@ func TestReadyzInfraDown(t *testing.T) {
 	h.SetReady()
 
 	rec := httptest.NewRecorder()
-	readyzHandler(h)(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	readyzHandler(h, slog.New(slog.DiscardHandler))(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rec.Code)

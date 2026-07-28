@@ -65,7 +65,7 @@ func teamStatsHandler(svc *service.Analytics) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -116,7 +116,7 @@ func topCreatorsHandler(svc *service.Analytics) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -161,7 +161,7 @@ func orphanAssigneesHandler(svc *service.Analytics) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }

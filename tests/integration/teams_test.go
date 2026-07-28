@@ -51,6 +51,19 @@ func TestCreateTeamCreatorBecomesOwner(t *testing.T) {
 	assert.Equal(t, "owner", got.Role)
 }
 
+func TestCreatingATeamAfterTheAccountIsGone(t *testing.T) {
+	t.Parallel()
+	email := mail("team-gone")
+	register(t, email, "Ada", "password123")
+	bearer := login(t, email, "password123")
+	_, err := testDB.Exec(`DELETE FROM users WHERE email = ?`, email)
+	require.NoError(t, err)
+
+	resp := doJSON(t, http.MethodPost, "/api/v1/teams", bearer, `{"name":"backend"}`)
+
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, readBody(t, resp))
+}
+
 func TestCreateTeamValidation(t *testing.T) {
 	t.Parallel()
 	bearer := registerAndLogin(t, mail("owner2"))

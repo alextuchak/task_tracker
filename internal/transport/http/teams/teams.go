@@ -50,12 +50,15 @@ func createHandler(svc *service.Teams) http.HandlerFunc {
 			return
 		}
 		m, err := svc.Create(r.Context(), principal.UserID, req.Name)
-		if err != nil {
-			httpkit.WriteInternalError(w, err)
-			return
+		switch {
+		case err == nil:
+			httpkit.WriteJSON(w, http.StatusCreated,
+				teamResponse{ID: m.ID, Name: m.Name, Role: string(m.Role)})
+		case errors.Is(err, domain.ErrNotFound):
+			httpkit.WriteError(w, http.StatusUnauthorized, "user no longer exists")
+		default:
+			httpkit.WriteInternalError(w, r, err)
 		}
-		httpkit.WriteJSON(w, http.StatusCreated,
-			teamResponse{ID: m.ID, Name: m.Name, Role: string(m.Role)})
 	}
 }
 
@@ -77,7 +80,7 @@ func listHandler(svc *service.Teams) http.HandlerFunc {
 		}
 		memberships, err := svc.List(r.Context(), principal.UserID)
 		if err != nil {
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 			return
 		}
 		resp := make([]teamResponse, 0, len(memberships))
@@ -135,7 +138,7 @@ func inviteHandler(svc *service.Teams) http.HandlerFunc {
 		case errors.Is(err, domain.ErrAlreadyMember):
 			httpkit.WriteError(w, http.StatusConflict, domain.ErrAlreadyMember.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }

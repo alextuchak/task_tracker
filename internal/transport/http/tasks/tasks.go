@@ -71,7 +71,7 @@ func createHandler(svc *service.Tasks) http.HandlerFunc {
 		case errors.Is(err, domain.ErrNotTeamMember):
 			httpkit.WriteError(w, http.StatusBadRequest, domain.ErrNotTeamMember.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -120,7 +120,7 @@ func listHandler(svc *service.Tasks) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -176,7 +176,7 @@ func updateHandler(svc *service.Tasks) http.HandlerFunc {
 		case errors.Is(err, domain.ErrNotTeamMember):
 			httpkit.WriteError(w, http.StatusBadRequest, domain.ErrNotTeamMember.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -223,7 +223,7 @@ func historyHandler(svc *service.Tasks) http.HandlerFunc {
 		case errors.Is(err, domain.ErrForbidden):
 			httpkit.WriteError(w, http.StatusForbidden, domain.ErrForbidden.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
