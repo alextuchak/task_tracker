@@ -123,20 +123,26 @@ func Metrics() func(http.Handler) http.Handler {
 			}
 			start := time.Now()
 			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+			defer func() {
+				route := routePattern(r)
+				status := strconv.Itoa(sw.status)
+				requestsTotal.WithLabelValues(r.Method, route, status).Inc()
+				if sw.status >= http.StatusInternalServerError {
+					requestErrors.WithLabelValues(r.Method, route, status).Inc()
+				}
+				requestDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+			}()
 			next.ServeHTTP(sw, r)
-
-			route := chi.RouteContext(r.Context()).RoutePattern()
-			if route == "" {
-				route = "unmatched"
-			}
-			status := strconv.Itoa(sw.status)
-			requestsTotal.WithLabelValues(r.Method, route, status).Inc()
-			if sw.status >= http.StatusInternalServerError {
-				requestErrors.WithLabelValues(r.Method, route, status).Inc()
-			}
-			requestDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
 		})
 	}
+}
+
+func routePattern(r *http.Request) string {
+	rctx := chi.RouteContext(r.Context())
+	if rctx == nil || rctx.RoutePattern() == "" {
+		return "unmatched"
+	}
+	return rctx.RoutePattern()
 }
 
 func Logging(log *slog.Logger) func(http.Handler) http.Handler {
@@ -148,14 +154,16 @@ func Logging(log *slog.Logger) func(http.Handler) http.Handler {
 			}
 			start := time.Now()
 			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+			defer func() {
+				log.Info("http request",
+					slog.String("method", r.Method),
+					slog.String("path", r.URL.Path),
+					slog.Int("status", sw.status),
+					slog.Int("bytes", sw.bytes),
+					slog.Duration("duration", time.Since(start)),
+				)
+			}()
 			next.ServeHTTP(sw, r)
-			log.Info("http request",
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
-				slog.Int("status", sw.status),
-				slog.Int("bytes", sw.bytes),
-				slog.Duration("duration", time.Since(start)),
-			)
 		})
 	}
 }

@@ -48,7 +48,7 @@ func registerHandler(svc *service.Auth) http.HandlerFunc {
 		case errors.Is(err, domain.ErrEmailTaken):
 			httpkit.WriteError(w, http.StatusConflict, domain.ErrEmailTaken.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }
@@ -82,7 +82,7 @@ func loginHandler(svc *service.Auth) http.HandlerFunc {
 		case errors.Is(err, domain.ErrInvalidCredentials):
 			httpkit.WriteError(w, http.StatusUnauthorized, domain.ErrInvalidCredentials.Error())
 		default:
-			httpkit.WriteInternalError(w, err)
+			httpkit.WriteInternalError(w, r, err)
 		}
 	}
 }

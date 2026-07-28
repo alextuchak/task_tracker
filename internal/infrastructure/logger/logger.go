@@ -18,9 +18,10 @@ func NewLog(env, appName, version string) *slog.Logger {
 	} else {
 		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo, ReplaceAttr: replaceAttr}))
 	}
-	return log.With(slog.String("app_name", appName),
+	log = log.With(slog.String("app_name", appName),
 		slog.String("app_version", version),
 		slog.String("env", env))
+	return log
 }
 
 func replaceAttr(groups []string, a slog.Attr) slog.Attr {

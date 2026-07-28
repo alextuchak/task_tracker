@@ -26,6 +26,10 @@ func (r *TeamRepo) Create(ctx context.Context, name string, creatorID int64) (in
 	conn := r.getter.DefaultTrOrDB(ctx, r.db)
 	res, err := conn.ExecContext(ctx,
 		`INSERT INTO teams (name, created_by) VALUES (?, ?)`, name, creatorID)
+	var mysqlErr *mysqldrv.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == foreignKeyViolationCode {
+		return 0, domain.ErrNotFound
+	}
 	if err != nil {
 		return 0, fmt.Errorf("insert team: %w", err)
 	}
