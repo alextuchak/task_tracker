@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand/v2"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,8 +29,6 @@ type Repo interface {
 	OldestPendingAge(ctx context.Context) (time.Duration, error)
 }
 
-// Sender must return promptly once ctx is done: the settle window, and the
-// config check built on it, assume a tick cannot outlive its send budget.
 type Sender interface {
 	SendBatch(ctx context.Context, msgs []Message) ([]SendResult, error)
 }
@@ -47,8 +46,6 @@ type retryAfter interface {
 	RetryAfterHint() time.Duration
 }
 
-// SettleWindow is the longest a single tick can hold its transaction: the send
-// budget plus the grace left for settling the result after the sends are done.
 func (c Config) SettleWindow() time.Duration { return c.Budget + settleGrace }
 
 func NewRelay(repo Repo, sender Sender, dedup Deduper, tx TxManager, cfg Config, log *slog.Logger) *Relay {
@@ -69,7 +66,6 @@ type Relay struct {
 	paused atomic.Int64
 }
 
-// Run may be called once per Relay: it closes the channel Drain waits on.
 func (r *Relay) Run(ctx context.Context) {
 	defer close(r.done)
 	ticker := time.NewTicker(r.cfg.Tick)
@@ -87,9 +83,6 @@ func (r *Relay) Run(ctx context.Context) {
 	}
 }
 
-// Drain waits for Run to return. A tick settles its result on a context that
-// survives cancellation, so the loop can only exit between ticks or after one
-// has finished writing — waiting for the loop is waiting for the write.
 func (r *Relay) Drain(ctx context.Context) error {
 	select {
 	case <-r.done:
@@ -100,6 +93,15 @@ func (r *Relay) Drain(ctx context.Context) error {
 }
 
 func (r *Relay) tick(parent context.Context) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			tickErrorsTotal.Inc()
+			r.log.Error("outbox tick panicked",
+				slog.Any("panic", rec), slog.String("stack", string(debug.Stack())))
+			r.pause(defaultPause)
+		}
+	}()
+
 	txCtx, cancelTx := context.WithTimeout(context.WithoutCancel(parent), r.cfg.SettleWindow())
 	defer cancelTx()
 	sendCtx, cancelSend := context.WithTimeout(parent, r.cfg.Budget)
@@ -174,8 +176,22 @@ type retryItem struct {
 	claimed Claimed
 }
 
-func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel context.CancelCauseFunc) shardOutcome {
-	var out shardOutcome
+func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel context.CancelCauseFunc) (out shardOutcome) {
+	var pending []Claimed
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			return
+		}
+		r.log.Error("outbox shard panicked",
+			slog.Int("undelivered", len(pending)-out.delivered),
+			slog.Any("panic", rec), slog.String("stack", string(debug.Stack())))
+		for _, c := range pending[out.delivered:] {
+			out.retry = append(out.retry, retryItem{claimed: c, reason: fmt.Sprintf("relay panic: %v", rec)})
+		}
+		cancel(errPaused)
+	}()
+
 	if ctx.Err() != nil {
 		switch {
 		case errors.Is(context.Cause(ctx), errPaused):
@@ -190,7 +206,7 @@ func (r *Relay) processShard(ctx context.Context, shard []Claimed, cancel contex
 		return out
 	}
 
-	pending := make([]Claimed, 0, len(shard))
+	pending = make([]Claimed, 0, len(shard))
 	msgs := make([]Message, 0, len(shard))
 	for _, c := range shard {
 		if r.dedup.WasSent(ctx, c.ID) {
